@@ -98,8 +98,6 @@ export function SettingsPage() {
   return (
     <section>
       <header className="page-header">
-        <span className="eyebrow">Configuration</span>
-        <h1>设置</h1>
         <p>配置入口尽量少而清楚，确认当前来源、已保存状态和测试结果即可，不暴露后端真实密钥。</p>
       </header>
 

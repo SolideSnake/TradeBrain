@@ -63,8 +63,6 @@ export function AlertsPage() {
   return (
     <section>
       <header className="page-header">
-        <span className="eyebrow">Notifications</span>
-        <h1>提醒</h1>
         <p>先看失败提醒，再按状态筛选历史，把“触发了什么”和“有没有送达”分开读。</p>
       </header>
 

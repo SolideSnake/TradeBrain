@@ -7,11 +7,11 @@ import { PortfolioPage } from "../pages/PortfolioPage";
 import { SettingsPage } from "../pages/SettingsPage";
 
 const navItems = [
-  { to: "/", label: "总览", hint: "先确认系统是否可用" },
-  { to: "/monitor", label: "监控", hint: "优先看状态变化与缺失行情" },
-  { to: "/alerts", label: "提醒", hint: "区分触发与投递结果" },
-  { to: "/portfolio", label: "持仓", hint: "看账户、仓位与盈亏" },
-  { to: "/settings", label: "设置", hint: "管理通知配置" },
+  { to: "/", label: "仪表盘" },
+  { to: "/portfolio", label: "资产" },
+  { to: "/monitor", label: "追踪" },
+  { to: "/alerts", label: "提醒" },
+  { to: "/settings", label: "设置" },
 ];
 
 export function App() {
@@ -22,9 +22,7 @@ export function App() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-kicker">TradeBrain</span>
-          <h1>交易监控台</h1>
-          <p>不扩业务边界，只把现有监控链路做得更清楚、更快扫、更容易判断。</p>
+          <h1>TradeBrain</h1>
         </div>
 
         <nav className="nav">
@@ -35,24 +33,18 @@ export function App() {
               end={item.to === "/"}
               className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
             >
-              <span>{item.label}</span>
-              <small>{item.hint}</small>
+              {item.label}
             </NavLink>
           ))}
         </nav>
-
-        <div className="sidebar-footer">
-          <p className="sidebar-footnote">当前线程仅改 `web/`，不改后端接口契约。</p>
-        </div>
       </aside>
 
       <main className="content">
         <div className="content-topbar">
           <div>
-            <span className="eyebrow">Frontend Optimization</span>
             <h2>{activeNav.label}</h2>
           </div>
-          <div className="topbar-chip">TradeBrain MVP 前端体验优化中</div>
+          <div className="topbar-chip">TradeBrain 本地工作台</div>
         </div>
 
         <Routes>

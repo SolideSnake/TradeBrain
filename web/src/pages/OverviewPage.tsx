@@ -40,8 +40,6 @@ export function OverviewPage() {
   return (
     <section>
       <header className="page-header">
-        <span className="eyebrow">Daily Start</span>
-        <h1>总览</h1>
         <p>把开盘前必须确认的几件事压到第一屏，先判断数据能不能信，再决定下一步去监控、提醒还是持仓。</p>
       </header>
 

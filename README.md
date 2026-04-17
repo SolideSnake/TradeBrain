@@ -107,6 +107,7 @@ cd D:\code\TradeBrain
 - 拉起前端标签页
 - 如果前后端都已启动，则直接打开浏览器，不重复启动服务
 - 前端固定使用 `5173` 端口，不会自动跳到 `5174`
+- 如果只缺后端或前端其中一个，只补启动缺失的一边
 
 常用模式：
 
@@ -253,8 +254,8 @@ npm run build
 
 ## 相关文档
 
-- [product-requirements.md](D:\code\TradeBrain\docs\product-requirements.md)
-- [module-design.md](D:\code\TradeBrain\docs\module-design.md)
-- [mvp-scope.md](D:\code\TradeBrain\docs\mvp-scope.md)
-- [technical-solution.md](D:\code\TradeBrain\docs\technical-solution.md)
+- [prd.md](D:\code\TradeBrain\docs\prd.md)
+- [arch.md](D:\code\TradeBrain\docs\arch.md)
+- [mvp.md](D:\code\TradeBrain\docs\mvp.md)
+- [tech.md](D:\code\TradeBrain\docs\tech.md)
 - [handoff.md](D:\code\TradeBrain\docs\handoff.md)

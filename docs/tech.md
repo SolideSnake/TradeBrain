@@ -225,7 +225,7 @@ TradeBrain/
 
 说明：
 
-- `backend/app/` 对应 [module-design.md](D:\code\TradeBrain\docs\module-design.md) 的核心后端模块。
+- `backend/app/` 对应 [arch.md](D:\code\TradeBrain\docs\arch.md) 的核心后端模块。
 - `web/src/` 单独管理前端页面与组件。
 - `docs/` 持续保存需求、模块设计、MVP、技术方案等文档。
 

@@ -53,8 +53,6 @@ export function PortfolioPage() {
   return (
     <section>
       <header className="page-header">
-        <span className="eyebrow">IBKR</span>
-        <h1>持仓</h1>
         <p>把账户层和持仓层拆开，先判断资金与仓位暴露，再看每只持仓的盈亏表现。</p>
       </header>
 

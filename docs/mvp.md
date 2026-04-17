@@ -333,7 +333,7 @@ MVP 当前实现顺序固定如下，且已经按该顺序完成：
 
 本文件只定义当前 MVP “做什么”，不定义详细模块内部实现。
 
-模块边界和目录结构以 [module-design.md](D:\code\TradeBrain\docs\module-design.md) 为准。
+模块边界和目录结构以 [arch.md](D:\code\TradeBrain\docs\arch.md) 为准。
 
 更长期的设计文档中仍可能保留“任务中心”作为后续能力，但它不属于当前 MVP 范围。
 

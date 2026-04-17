@@ -12,7 +12,7 @@
 
 截至 `2026-04-17`，TradeBrain 第一版 MVP 已完成。
 
-当前已经落地的第一版能力以 [mvp-scope.md](D:\code\TradeBrain\docs\mvp-scope.md) 为准，主要包括：
+当前已经落地的第一版能力以 [mvp.md](D:\code\TradeBrain\docs\mvp.md) 为准，主要包括：
 
 - watchlist 管理
 - IBKR 只读接入

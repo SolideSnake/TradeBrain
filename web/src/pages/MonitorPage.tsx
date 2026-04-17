@@ -117,6 +117,32 @@ export function MonitorPage() {
     return value === null ? "--" : value.toFixed(2);
   }
 
+  function formatMarketLabel(value: Market) {
+    switch (value) {
+      case "US":
+        return "美股";
+      case "HK":
+        return "港股";
+      case "OTHER":
+      default:
+        return "其他";
+    }
+  }
+
+  function formatAssetTypeLabel(value: AssetType) {
+    switch (value) {
+      case "stock":
+        return "股票";
+      case "etf":
+        return "ETF";
+      case "bond":
+        return "债券";
+      case "other":
+      default:
+        return "其他";
+    }
+  }
+
   function formatValuationLabel(value: ValuationLabel | null) {
     switch (value) {
       case "undervalued":
@@ -195,8 +221,6 @@ export function MonitorPage() {
   return (
     <section>
       <header className="page-header">
-        <span className="eyebrow">Watchlist</span>
-        <h1>监控</h1>
         <p>监控页优先服务日常扫描，不让录入表单抢主视觉，把最值得先处理的标的排在前面。</p>
       </header>
 
@@ -293,7 +317,7 @@ export function MonitorPage() {
                 <select name="market" value={form.market} onChange={handleInputChange}>
                   {marketOptions.map((option) => (
                     <option key={option} value={option}>
-                      {option}
+                      {formatMarketLabel(option)}
                     </option>
                   ))}
                 </select>
@@ -304,7 +328,7 @@ export function MonitorPage() {
                 <select name="asset_type" value={form.asset_type} onChange={handleInputChange}>
                   {assetTypeOptions.map((option) => (
                     <option key={option} value={option}>
-                      {option}
+                      {formatAssetTypeLabel(option)}
                     </option>
                   ))}
                 </select>
@@ -377,7 +401,8 @@ export function MonitorPage() {
                   <span className="symbol-cell">{entry.symbol}</span>
                   <span className="muted">{entry.name}</span>
                   <div className="status-stack">
-                    <span className="table-chip">{entry.market}</span>
+                    <span className="table-chip">{formatMarketLabel(entry.market)}</span>
+                    <span className="table-chip">{formatAssetTypeLabel(entry.asset_type)}</span>
                     <span className="table-chip">{entry.group_name}</span>
                   </div>
                 </div>
