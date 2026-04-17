@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.adapters.ibkr.client import IBKRClient, get_ibkr_client
 from app.adapters.persistence.sqlite.watchlist_repository import WatchlistRepository
+from app.application.alert_router import AlertRouter
+from app.application.state_engine import StateEngine
+from app.domains.indicators.service import IndicatorService
 from app.domains.snapshot.schemas import (
     CanonicalSnapshot,
     CanonicalWatchlistItem,
@@ -19,33 +22,68 @@ class SnapshotBuilder:
         self,
         watchlist_repository: WatchlistRepository | None = None,
         ibkr_client: IBKRClient | None = None,
+        indicator_service: IndicatorService | None = None,
+        state_engine: StateEngine | None = None,
+        alert_router: AlertRouter | None = None,
     ) -> None:
         self.watchlist_repository = watchlist_repository or WatchlistRepository()
         self.ibkr_client = ibkr_client or get_ibkr_client()
+        self.indicator_service = indicator_service or IndicatorService()
+        self.state_engine = state_engine or StateEngine()
+        self.alert_router = alert_router or AlertRouter()
 
     def build(self, db: Session) -> CanonicalSnapshot:
         watchlist_entries = self.watchlist_repository.list(db)
         broker_snapshot = self.ibkr_client.fetch_snapshot(
             [entry.symbol for entry in watchlist_entries if entry.enabled]
         )
-        positions_by_symbol = {position.symbol: position for position in broker_snapshot.positions}
-
-        watchlist = [
-            CanonicalWatchlistItem(
-                id=entry.id,
-                symbol=entry.symbol,
-                name=entry.name,
-                market=entry.market,
-                asset_type=entry.asset_type,
-                group_name=entry.group_name,
-                enabled=entry.enabled,
-                in_position=entry.in_position,
-                notes=entry.notes,
-                quote=broker_snapshot.quotes.get(entry.symbol),
-                position=positions_by_symbol.get(entry.symbol),
+        positions_by_symbol = {
+            position.symbol: self.indicator_service.enrich_position(
+                position,
+                broker_snapshot.quotes.get(position.symbol),
             )
-            for entry in watchlist_entries
-        ]
+            for position in broker_snapshot.positions
+        }
+
+        indicators_by_symbol = {}
+        for entry in watchlist_entries:
+            indicators_by_symbol[entry.symbol] = self.indicator_service.build(
+                broker_snapshot.quotes.get(entry.symbol),
+                positions_by_symbol.get(entry.symbol),
+                broker_snapshot.reference_levels.get(entry.symbol),
+                broker_snapshot.fundamentals.get(entry.symbol),
+            )
+
+        states_by_symbol = self.state_engine.evaluate_symbols(db, indicators_by_symbol)
+        self.alert_router.route_state_changes(db, states_by_symbol, indicators_by_symbol)
+
+        watchlist: list[CanonicalWatchlistItem] = []
+        for entry in watchlist_entries:
+            quote = broker_snapshot.quotes.get(entry.symbol)
+            position = positions_by_symbol.get(entry.symbol)
+            reference_levels = broker_snapshot.reference_levels.get(entry.symbol)
+            fundamentals = broker_snapshot.fundamentals.get(entry.symbol)
+            indicators = indicators_by_symbol.get(entry.symbol)
+
+            watchlist.append(
+                CanonicalWatchlistItem(
+                    id=entry.id,
+                    symbol=entry.symbol,
+                    name=entry.name,
+                    market=entry.market,
+                    asset_type=entry.asset_type,
+                    group_name=entry.group_name,
+                    enabled=entry.enabled,
+                    in_position=entry.in_position,
+                    notes=entry.notes,
+                    quote=quote,
+                    position=position,
+                    reference_levels=reference_levels,
+                    fundamentals=fundamentals,
+                    indicators=indicators,
+                    state=states_by_symbol.get(entry.symbol),
+                )
+            )
 
         summary = SnapshotSummary(
             tracked_symbols=len(watchlist),
@@ -65,5 +103,5 @@ class SnapshotBuilder:
             summary=summary,
             account=broker_snapshot.account,
             watchlist=watchlist,
-            positions=broker_snapshot.positions,
+            positions=list(positions_by_symbol.values()),
         )

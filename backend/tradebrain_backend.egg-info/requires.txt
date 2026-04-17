@@ -1,4 +1,5 @@
 fastapi<1.0,>=0.115
+ib_async<3.0,>=2.1
 pydantic-settings<3.0,>=2.4
 sqlalchemy<3.0,>=2.0
 uvicorn[standard]<1.0,>=0.30

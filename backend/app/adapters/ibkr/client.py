@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from functools import lru_cache
+from math import isnan
 from typing import Sequence
+from xml.etree import ElementTree
 
 from app.config.settings import Settings, get_settings
+from app.domains.fundamentals.schemas import FundamentalSnapshot
+from app.domains.indicators.schemas import PriceReferenceLevels
 from app.domains.market.schemas import QuoteSnapshot
 from app.domains.portfolio.schemas import AccountSnapshot, PositionSnapshot
 from app.domains.snapshot.schemas import BrokerSnapshotEnvelope
@@ -21,9 +25,13 @@ class MockIBKRClient(IBKRClient):
 
     def fetch_snapshot(self, tracked_symbols: Sequence[str]) -> BrokerSnapshotEnvelope:
         now = datetime.now(UTC)
-        quotes = {
-            symbol: self._build_quote(symbol, now)
-            for symbol in sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
+        unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
+        quotes = {symbol: self._build_quote(symbol, now) for symbol in unique_symbols}
+        reference_levels = {
+            symbol: self._build_reference_levels(symbol, now) for symbol in unique_symbols
+        }
+        fundamentals = {
+            symbol: self._build_fundamentals(symbol, now) for symbol in unique_symbols
         }
         account = AccountSnapshot(
             account_id=self.settings.ibkr_account_id or "MOCK-ACCOUNT",
@@ -40,7 +48,11 @@ class MockIBKRClient(IBKRClient):
             account=account,
             positions=[],
             quotes=quotes,
-            warnings=["IBKR mock mode is active. Connect TWS/Gateway and switch IBKR_MODE=live for real data."],
+            reference_levels=reference_levels,
+            fundamentals=fundamentals,
+            warnings=[
+                "IBKR mock mode is active. Connect TWS/Gateway and switch IBKR_MODE=live for real data."
+            ],
         )
 
     def _build_quote(self, symbol: str, now: datetime) -> QuoteSnapshot:
@@ -62,8 +74,53 @@ class MockIBKRClient(IBKRClient):
             source="mock",
         )
 
+    def _build_reference_levels(self, symbol: str, now: datetime) -> PriceReferenceLevels:
+        quote = self._build_quote(symbol, now)
+        last_price = quote.last_price or 0.0
+        return PriceReferenceLevels(
+            high_52w=round(last_price * 1.18, 2) if last_price else None,
+            high_90d=round(last_price * 1.08, 2) if last_price else None,
+            source="mock",
+            as_of=now,
+        )
+
+    def _build_fundamentals(self, symbol: str, now: datetime) -> FundamentalSnapshot:
+        seed = sum(ord(character) for character in symbol)
+        pe_ratio = round(10 + (seed % 18) + ((seed % 10) / 10), 2)
+        growth = round(8 + (seed % 28) + ((seed % 9) / 10), 2)
+        peg_ratio = round(pe_ratio / growth, 2) if growth > 0 else None
+        return FundamentalSnapshot(
+            pe_ratio=pe_ratio,
+            earnings_growth_rate_percent=growth,
+            peg_ratio=peg_ratio,
+            source="mock",
+            as_of=now,
+        )
+
 
 class LiveIBKRClient(IBKRClient):
+    PEG_KEYS = ("peg", "pegratio", "ratiopeg", "pegtm", "peg5y")
+    PE_KEYS = (
+        "pe",
+        "peratio",
+        "ttmpe",
+        "priceearnings",
+        "priceearningsratio",
+        "apeexclxor",
+        "pettm",
+    )
+    GROWTH_KEYS = (
+        "epsgrowth",
+        "epsgrowthrate",
+        "projectedepsgrowthrate",
+        "projectedepsgrowth",
+        "earningsgrowth",
+        "ltgrowthrate",
+        "fiveyearepsgrowth",
+        "projlongtermgrowth",
+        "expectedgrowthrate",
+    )
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
@@ -84,14 +141,16 @@ class LiveIBKRClient(IBKRClient):
                 ),
                 positions=[],
                 quotes={},
-                warnings=[
-                    "ib_async is not installed. Install it before using live IBKR mode.",
-                ],
+                reference_levels={},
+                fundamentals={},
+                warnings=["ib_async is not installed. Install it before using live IBKR mode."],
             )
 
         ib = IB()
         quotes: dict[str, QuoteSnapshot] = {}
         positions: list[PositionSnapshot] = []
+        reference_levels: dict[str, PriceReferenceLevels] = {}
+        fundamentals: dict[str, FundamentalSnapshot] = {}
 
         try:
             ib.connect(
@@ -112,7 +171,22 @@ class LiveIBKRClient(IBKRClient):
 
             account = self._build_account_snapshot(ib, account_id, now)
             positions = self._build_positions(ib, account_id)
-            quotes = self._build_quotes(ib, Stock, tracked_symbols, now)
+            symbols = sorted(
+                {
+                    *{symbol.strip().upper() for symbol in tracked_symbols if symbol},
+                    *{position.symbol for position in positions},
+                }
+            )
+            quotes, ratio_payloads = self._build_quotes_and_ratio_payloads(ib, Stock, symbols, now)
+            reference_levels = self._build_reference_levels(ib, Stock, symbols, now, warnings)
+            fundamentals = self._build_fundamentals(
+                ib,
+                Stock,
+                symbols,
+                ratio_payloads,
+                now,
+                warnings,
+            )
 
             return BrokerSnapshotEnvelope(
                 mode="live",
@@ -120,10 +194,14 @@ class LiveIBKRClient(IBKRClient):
                 account=account,
                 positions=positions,
                 quotes=quotes,
+                reference_levels=reference_levels,
+                fundamentals=fundamentals,
                 warnings=warnings,
             )
         except ConnectionRefusedError:
-            warnings.append("Could not connect to IBKR. Check TWS/Gateway, API port, and trusted IP settings.")
+            warnings.append(
+                "Could not connect to IBKR. Check TWS/Gateway, API port, and trusted IP settings."
+            )
         except Exception as exc:
             warnings.append(f"IBKR live snapshot failed: {exc}")
         finally:
@@ -140,6 +218,8 @@ class LiveIBKRClient(IBKRClient):
             ),
             positions=[],
             quotes={},
+            reference_levels={},
+            fundamentals={},
             warnings=warnings,
         )
 
@@ -188,17 +268,24 @@ class LiveIBKRClient(IBKRClient):
             )
         return rows
 
-    def _build_quotes(self, ib, stock_cls, tracked_symbols: Sequence[str], now: datetime) -> dict[str, QuoteSnapshot]:
+    def _build_quotes_and_ratio_payloads(
+        self,
+        ib,
+        stock_cls,
+        tracked_symbols: Sequence[str],
+        now: datetime,
+    ) -> tuple[dict[str, QuoteSnapshot], dict[str, dict[str, float]]]:
         tickers = []
         unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
         for symbol in unique_symbols:
             contract = stock_cls(symbol, "SMART", "USD")
-            ticker = ib.reqMktData(contract, "", False, False)
+            ticker = ib.reqMktData(contract, "258", False, False)
             tickers.append((symbol, ticker))
 
         ib.sleep(self.settings.ibkr_market_data_wait_seconds)
 
         quotes: dict[str, QuoteSnapshot] = {}
+        ratio_payloads: dict[str, dict[str, float]] = {}
         for symbol, ticker in tickers:
             last_price = self._resolve_last_price(ticker)
             previous_close = self._to_float(getattr(ticker, "close", None))
@@ -216,7 +303,200 @@ class LiveIBKRClient(IBKRClient):
                 as_of=now,
                 source="live",
             )
-        return quotes
+
+            ratio_payloads[symbol] = self._extract_ratio_payload(
+                getattr(ticker, "fundamentalRatios", None)
+            )
+        return quotes, ratio_payloads
+
+    def _build_reference_levels(
+        self,
+        ib,
+        stock_cls,
+        tracked_symbols: Sequence[str],
+        now: datetime,
+        warnings: list[str],
+    ) -> dict[str, PriceReferenceLevels]:
+        unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
+        reference_levels: dict[str, PriceReferenceLevels] = {}
+
+        for symbol in unique_symbols:
+            contract = stock_cls(symbol, "SMART", "USD")
+            try:
+                bars = ib.reqHistoricalData(
+                    contract,
+                    endDateTime="",
+                    durationStr="1 Y",
+                    barSizeSetting="1 day",
+                    whatToShow="TRADES",
+                    useRTH=False,
+                )
+                reference_levels[symbol] = self._reference_levels_from_bars(bars, now)
+            except Exception as exc:
+                warnings.append(f"Failed to load historical highs for {symbol}: {exc}")
+                reference_levels[symbol] = PriceReferenceLevels(source="live", as_of=now)
+
+        return reference_levels
+
+    def _build_fundamentals(
+        self,
+        ib,
+        stock_cls,
+        tracked_symbols: Sequence[str],
+        ratio_payloads: dict[str, dict[str, float]],
+        now: datetime,
+        warnings: list[str],
+    ) -> dict[str, FundamentalSnapshot]:
+        unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
+        snapshots: dict[str, FundamentalSnapshot] = {}
+
+        for symbol in unique_symbols:
+            contract = stock_cls(symbol, "SMART", "USD")
+            ratio_payload = ratio_payloads.get(symbol, {})
+            xml_payloads: list[str] = []
+
+            try:
+                report_snapshot = ib.reqFundamentalData(contract, "ReportSnapshot")
+                if report_snapshot:
+                    xml_payloads.append(report_snapshot)
+            except Exception as exc:
+                warnings.append(f"Failed to load ReportSnapshot for {symbol}: {exc}")
+
+            try:
+                analyst_estimates = ib.reqFundamentalData(contract, "RESC")
+                if analyst_estimates:
+                    xml_payloads.append(analyst_estimates)
+            except Exception as exc:
+                warnings.append(f"Failed to load RESC for {symbol}: {exc}")
+
+            snapshots[symbol] = self._fundamentals_from_sources(
+                ratio_payload,
+                xml_payloads,
+                now,
+            )
+
+        return snapshots
+
+    def _fundamentals_from_sources(
+        self,
+        ratio_payload: dict[str, float],
+        xml_payloads: list[str],
+        now: datetime,
+    ) -> FundamentalSnapshot:
+        candidates = dict(ratio_payload)
+        for xml_payload in xml_payloads:
+            candidates.update(self._extract_xml_numeric_candidates(xml_payload))
+
+        pe_ratio = self._pick_candidate(candidates, self.PE_KEYS)
+        growth_rate = self._pick_candidate(candidates, self.GROWTH_KEYS)
+        peg_ratio = self._pick_candidate(candidates, self.PEG_KEYS)
+
+        if growth_rate is not None and abs(growth_rate) < 1:
+            growth_rate = round(growth_rate * 100, 2)
+
+        if peg_ratio is None and pe_ratio is not None and growth_rate not in (None, 0):
+            peg_ratio = round(pe_ratio / growth_rate, 2)
+
+        source = "live-ratios" if ratio_payload else "live-fundamentals"
+        return FundamentalSnapshot(
+            pe_ratio=pe_ratio,
+            earnings_growth_rate_percent=growth_rate,
+            peg_ratio=peg_ratio,
+            source=source,
+            as_of=now,
+        )
+
+    def _extract_ratio_payload(self, fundamental_ratios) -> dict[str, float]:
+        if fundamental_ratios is None:
+            return {}
+
+        payload: dict[str, float] = {}
+        for key, value in vars(fundamental_ratios).items():
+            normalized = self._normalize_key(key)
+            numeric_value = self._to_float(value)
+            if numeric_value is None:
+                continue
+            payload[normalized] = numeric_value
+        return payload
+
+    def _extract_xml_numeric_candidates(self, xml_payload: str) -> dict[str, float]:
+        candidates: dict[str, float] = {}
+        try:
+            root = ElementTree.fromstring(xml_payload)
+        except ElementTree.ParseError:
+            return candidates
+
+        for element in root.iter():
+            text = (element.text or "").strip()
+            numeric_value = self._to_float(text)
+            if numeric_value is None:
+                continue
+
+            tags = {self._normalize_key(element.tag)}
+            for attr_name, attr_value in element.attrib.items():
+                tags.add(self._normalize_key(attr_name))
+                tags.add(self._normalize_key(str(attr_value)))
+
+            for tag in tags:
+                if tag:
+                    candidates.setdefault(tag, numeric_value)
+        return candidates
+
+    def _pick_candidate(
+        self,
+        candidates: dict[str, float],
+        keys: Sequence[str],
+    ) -> float | None:
+        preferred = [self._normalize_key(key) for key in keys]
+
+        for key in preferred:
+            if key in candidates:
+                return candidates[key]
+
+        for candidate_key, value in candidates.items():
+            if any(key in candidate_key for key in preferred):
+                return value
+        return None
+
+    def _reference_levels_from_bars(self, bars, now: datetime) -> PriceReferenceLevels:
+        highs: list[float] = []
+        recent_highs: list[float] = []
+        cutoff = now - timedelta(days=90)
+
+        for bar in bars:
+            high = self._to_float(getattr(bar, "high", None))
+            if high is None:
+                continue
+
+            highs.append(high)
+            bar_dt = self._normalize_bar_datetime(getattr(bar, "date", None))
+            if bar_dt is not None and bar_dt >= cutoff:
+                recent_highs.append(high)
+
+        if not recent_highs and highs:
+            recent_highs = highs[-65:]
+
+        return PriceReferenceLevels(
+            high_52w=round(max(highs), 2) if highs else None,
+            high_90d=round(max(recent_highs), 2) if recent_highs else None,
+            source="live",
+            as_of=now,
+        )
+
+    def _normalize_bar_datetime(self, value: object) -> datetime | None:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=UTC)
+        if isinstance(value, date):
+            return datetime.combine(value, time.min, tzinfo=UTC)
+        if isinstance(value, str):
+            raw = value.strip()
+            for fmt in ("%Y%m%d", "%Y-%m-%d", "%Y%m%d  %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    parsed = datetime.strptime(raw, fmt)
+                    return parsed.replace(tzinfo=UTC)
+                except ValueError:
+                    continue
+        return None
 
     def _resolve_last_price(self, ticker) -> float | None:
         last = self._to_float(getattr(ticker, "last", None))
@@ -233,14 +513,21 @@ class LiveIBKRClient(IBKRClient):
             return round((bid + ask) / 2, 2)
         return None
 
+    def _normalize_key(self, value: str) -> str:
+        return "".join(character for character in value.lower() if character.isalnum())
+
     def _to_float(self, value: object) -> float | None:
         if value in (None, "", "N/A"):
             return None
 
         try:
-            return float(value)
+            numeric = float(value)
         except (TypeError, ValueError):
             return None
+
+        if isnan(numeric) or numeric <= -99999:
+            return None
+        return numeric
 
 
 @lru_cache(maxsize=1)

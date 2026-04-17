@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from app.config.settings import get_settings
+from app.config.settings import PROJECT_ROOT, get_settings
 
 
 class Base(DeclarativeBase):
@@ -18,7 +18,7 @@ def get_engine():
     settings = get_settings()
     db_path = Path(settings.db_path)
     if not db_path.is_absolute():
-        db_path = Path.cwd() / db_path
+        db_path = PROJECT_ROOT / db_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(
         settings.database_url,
@@ -41,6 +41,9 @@ def get_db():
 
 
 def init_db() -> None:
+    import app.domains.alerts.models  # noqa: F401
+    import app.domains.preferences.models  # noqa: F401
+    import app.domains.state.models  # noqa: F401
     import app.domains.watchlist.models  # noqa: F401
 
     engine = get_engine()

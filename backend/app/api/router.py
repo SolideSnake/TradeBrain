@@ -4,11 +4,21 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.adapters.persistence.sqlite.db import get_db
+from app.application.alert_router import AlertRouter
+from app.application.notification_settings_service import NotificationSettingsService
+from app.application.state_engine import StateEngine
 from app.application.snapshot_builder import SnapshotBuilder
 from app.application.watchlist_service import WatchlistService
 from app.config.settings import get_settings
-from app.domains.watchlist.errors import DuplicateWatchlistSymbolError
+from app.domains.alerts.schemas import AlertEventRead
+from app.domains.preferences.schemas import (
+    NotificationSettingsRead,
+    NotificationSettingsUpdate,
+    NotificationTestResult,
+)
 from app.domains.snapshot.schemas import CanonicalSnapshot
+from app.domains.state.schemas import WatchlistStateSnapshot
+from app.domains.watchlist.errors import DuplicateWatchlistSymbolError
 from app.domains.watchlist.schemas import (
     WatchlistEntryCreate,
     WatchlistEntryRead,
@@ -17,6 +27,9 @@ from app.domains.watchlist.schemas import (
 
 router = APIRouter()
 watchlist_service = WatchlistService()
+state_engine = StateEngine()
+alert_router = AlertRouter()
+notification_settings_service = NotificationSettingsService()
 
 
 @router.get("/api/health")
@@ -33,6 +46,34 @@ def list_watchlist(db: Session = Depends(get_db)) -> list[WatchlistEntryRead]:
 @router.get("/api/snapshot", response_model=CanonicalSnapshot)
 def get_snapshot(db: Session = Depends(get_db)) -> CanonicalSnapshot:
     return SnapshotBuilder().build(db)
+
+
+@router.get("/api/states", response_model=list[WatchlistStateSnapshot])
+def list_states(db: Session = Depends(get_db)) -> list[WatchlistStateSnapshot]:
+    return state_engine.list_states(db)
+
+
+@router.get("/api/alerts", response_model=list[AlertEventRead])
+def list_alerts(db: Session = Depends(get_db)) -> list[AlertEventRead]:
+    return alert_router.list_recent(db)
+
+
+@router.get("/api/settings/notifications", response_model=NotificationSettingsRead)
+def get_notification_settings(db: Session = Depends(get_db)) -> NotificationSettingsRead:
+    return notification_settings_service.get_settings(db)
+
+
+@router.put("/api/settings/notifications", response_model=NotificationSettingsRead)
+def update_notification_settings(
+    payload: NotificationSettingsUpdate,
+    db: Session = Depends(get_db),
+) -> NotificationSettingsRead:
+    return notification_settings_service.update_settings(db, payload)
+
+
+@router.post("/api/settings/notifications/test", response_model=NotificationTestResult)
+def test_notification_settings(db: Session = Depends(get_db)) -> NotificationTestResult:
+    return notification_settings_service.send_test_message(db)
 
 
 @router.post(

@@ -6,6 +6,8 @@ from pathlib import Path
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 
 class Settings(BaseSettings):
     app_name: str = "TradeBrain"
@@ -25,7 +27,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -36,7 +38,7 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         db_path = Path(self.db_path)
         if not db_path.is_absolute():
-            db_path = Path.cwd() / db_path
+            db_path = PROJECT_ROOT / db_path
         return f"sqlite:///{db_path.as_posix()}"
 
 

@@ -22,6 +22,7 @@ class PositionSnapshot(BaseModel):
     market_price: float | None = None
     market_value: float | None = None
     unrealized_pnl: float | None = None
+    unrealized_pnl_percent: float | None = None
     currency: str = "USD"
     account_id: str = ""
 

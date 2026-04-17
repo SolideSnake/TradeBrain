@@ -28,3 +28,19 @@ class AlertLevel(StrEnum):
     WARNING = "warning"
     CRITICAL = "critical"
 
+
+class AlertChannel(StrEnum):
+    TELEGRAM = "telegram"
+
+
+class AlertDeliveryStatus(StrEnum):
+    SENT = "sent"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class ValuationLabel(StrEnum):
+    UNDERVALUED = "undervalued"
+    FAIR = "fair"
+    OVERVALUED = "overvalued"
+

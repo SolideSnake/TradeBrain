@@ -6,8 +6,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.core.types.common import AssetType, Market
+from app.domains.fundamentals.schemas import FundamentalSnapshot
+from app.domains.indicators.schemas import IndicatorSnapshot, PriceReferenceLevels
 from app.domains.market.schemas import QuoteSnapshot
 from app.domains.portfolio.schemas import AccountSnapshot, PositionSnapshot
+from app.domains.state.schemas import WatchlistStateSnapshot
 
 
 class SnapshotMeta(BaseModel):
@@ -37,6 +40,10 @@ class CanonicalWatchlistItem(BaseModel):
     notes: str
     quote: QuoteSnapshot | None = None
     position: PositionSnapshot | None = None
+    reference_levels: PriceReferenceLevels | None = None
+    fundamentals: FundamentalSnapshot | None = None
+    indicators: IndicatorSnapshot | None = None
+    state: WatchlistStateSnapshot | None = None
 
 
 class BrokerSnapshotEnvelope(BaseModel):
@@ -45,6 +52,8 @@ class BrokerSnapshotEnvelope(BaseModel):
     account: AccountSnapshot
     positions: list[PositionSnapshot]
     quotes: dict[str, QuoteSnapshot]
+    reference_levels: dict[str, PriceReferenceLevels]
+    fundamentals: dict[str, FundamentalSnapshot]
     warnings: list[str] = Field(default_factory=list)
 
 
