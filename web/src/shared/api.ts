@@ -5,6 +5,10 @@ export type AlertChannel = "telegram";
 export type AlertLevel = "info" | "warning" | "critical";
 export type AlertDeliveryStatus = "sent" | "skipped" | "failed";
 export type NotificationSettingsSource = "database" | "environment" | "none";
+export type IBKRMode = "mock" | "ibkr";
+export type IBKRProfileName = "real" | "paper";
+export type IBKRSettingsSource = "database" | "environment";
+export type SnapshotCacheStatus = "empty" | "idle" | "refreshing" | "success" | "failed";
 
 export interface WatchlistEntry {
   id: number;
@@ -127,6 +131,41 @@ export interface NotificationTestResult {
   detail: string;
 }
 
+export interface IBKRConnectionProfile {
+  host: string;
+  port: number;
+  client_id: number;
+  account_id: string;
+}
+
+export interface IBKRSettings {
+  mode: IBKRMode;
+  active_profile: IBKRProfileName;
+  active_display_name: string;
+  real: IBKRConnectionProfile;
+  paper: IBKRConnectionProfile;
+  source: IBKRSettingsSource;
+}
+
+export interface UpdateIBKRSettingsPayload {
+  mode?: IBKRMode;
+  active_profile?: IBKRProfileName;
+  real?: IBKRConnectionProfile;
+  paper?: IBKRConnectionProfile;
+}
+
+export interface IBKRConnectionTestResult {
+  success: boolean;
+  profile: IBKRProfileName;
+  display_name: string;
+  host: string;
+  port: number;
+  client_id: number;
+  account_id: string;
+  accounts: string[];
+  detail: string;
+}
+
 export interface AccountSnapshot {
   account_id: string;
   net_liquidation: number | null;
@@ -149,6 +188,8 @@ export interface SnapshotMeta {
   generated_at: string;
   broker_mode: "mock" | "live";
   broker_status: "mock" | "connected" | "error";
+  broker_profile: "mock" | "real" | "paper";
+  broker_display_name: string;
   warnings: string[];
 }
 
@@ -167,6 +208,16 @@ export interface CanonicalSnapshot {
   account: AccountSnapshot;
   watchlist: SnapshotWatchlistItem[];
   positions: PositionSnapshot[];
+}
+
+export interface SnapshotResponse {
+  snapshot: CanonicalSnapshot | null;
+  cache_status: SnapshotCacheStatus;
+  from_cache: boolean;
+  last_success_at: string | null;
+  refresh_started_at: string | null;
+  last_error_at: string | null;
+  last_error: string;
 }
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -194,8 +245,14 @@ export function listWatchlist(): Promise<WatchlistEntry[]> {
   return request<WatchlistEntry[]>("/api/watchlist");
 }
 
-export function getSnapshot(): Promise<CanonicalSnapshot> {
-  return request<CanonicalSnapshot>("/api/snapshot");
+export function getSnapshot(): Promise<SnapshotResponse> {
+  return request<SnapshotResponse>("/api/snapshot");
+}
+
+export function refreshSnapshot(): Promise<SnapshotResponse> {
+  return request<SnapshotResponse>("/api/snapshot/refresh", {
+    method: "POST",
+  });
 }
 
 export function listAlerts(): Promise<AlertEvent[]> {
@@ -218,6 +275,24 @@ export function updateNotificationSettings(
 export function testNotificationSettings(): Promise<NotificationTestResult> {
   return request<NotificationTestResult>("/api/settings/notifications/test", {
     method: "POST",
+  });
+}
+
+export function getIBKRSettings(): Promise<IBKRSettings> {
+  return request<IBKRSettings>("/api/settings/ibkr");
+}
+
+export function updateIBKRSettings(payload: UpdateIBKRSettingsPayload): Promise<IBKRSettings> {
+  return request<IBKRSettings>("/api/settings/ibkr", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function testIBKRConnection(profile: IBKRProfileName): Promise<IBKRConnectionTestResult> {
+  return request<IBKRConnectionTestResult>("/api/settings/ibkr/test", {
+    method: "POST",
+    body: JSON.stringify({ profile }),
   });
 }
 

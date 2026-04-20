@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from functools import lru_cache
 from math import isnan
-from typing import Sequence
+from typing import Literal, Sequence
 from xml.etree import ElementTree
 
 from app.config.settings import Settings, get_settings
@@ -12,6 +13,45 @@ from app.domains.indicators.schemas import PriceReferenceLevels
 from app.domains.market.schemas import QuoteSnapshot
 from app.domains.portfolio.schemas import AccountSnapshot, PositionSnapshot
 from app.domains.snapshot.schemas import BrokerSnapshotEnvelope
+
+IBKRProfileName = Literal["real", "paper"]
+
+
+@dataclass(frozen=True)
+class IBKRRuntimeProfile:
+    name: IBKRProfileName
+    display_name: str
+    host: str
+    port: int
+    client_id: int
+    account_id: str = ""
+
+
+def normalize_ibkr_mode(value: str) -> Literal["mock", "ibkr"]:
+    normalized = value.strip().lower()
+    if normalized in {"ibkr", "live"}:
+        return "ibkr"
+    return "mock"
+
+
+def normalize_ibkr_profile(value: str) -> IBKRProfileName:
+    return "real" if value.strip().lower() == "real" else "paper"
+
+
+def ibkr_display_name(profile: str) -> str:
+    return "真实 TWS" if normalize_ibkr_profile(profile) == "real" else "模拟 TWS"
+
+
+def resolve_legacy_runtime_profile(settings: Settings) -> IBKRRuntimeProfile:
+    profile_name = normalize_ibkr_profile(settings.ibkr_active_profile)
+    return IBKRRuntimeProfile(
+        name=profile_name,
+        display_name=ibkr_display_name(profile_name),
+        host=settings.ibkr_host,
+        port=settings.ibkr_port,
+        client_id=settings.ibkr_client_id,
+        account_id=settings.ibkr_account_id,
+    )
 
 
 class IBKRClient:
@@ -45,6 +85,8 @@ class MockIBKRClient(IBKRClient):
         return BrokerSnapshotEnvelope(
             mode="mock",
             status="mock",
+            profile="mock",
+            display_name="Mock 数据",
             account=account,
             positions=[],
             quotes=quotes,
@@ -121,21 +163,24 @@ class LiveIBKRClient(IBKRClient):
         "expectedgrowthrate",
     )
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, profile: IBKRRuntimeProfile | None = None) -> None:
         self.settings = settings
+        self.profile = profile or resolve_legacy_runtime_profile(settings)
 
     def fetch_snapshot(self, tracked_symbols: Sequence[str]) -> BrokerSnapshotEnvelope:
         warnings: list[str] = []
         now = datetime.now(UTC)
 
         try:
-            from ib_async import IB, Stock
+            from ib_async import IB, StartupFetch, Stock
         except ImportError:
             return BrokerSnapshotEnvelope(
                 mode="live",
                 status="error",
+                profile=self.profile.name,
+                display_name=self.profile.display_name,
                 account=AccountSnapshot(
-                    account_id=self.settings.ibkr_account_id,
+                    account_id=self.profile.account_id,
                     source="live",
                     updated_at=now,
                 ),
@@ -153,10 +198,18 @@ class LiveIBKRClient(IBKRClient):
         fundamentals: dict[str, FundamentalSnapshot] = {}
 
         try:
+            startup_fetch = (
+                StartupFetch.POSITIONS
+                | StartupFetch.ACCOUNT_UPDATES
+                | StartupFetch.SUB_ACCOUNT_UPDATES
+            )
             ib.connect(
-                self.settings.ibkr_host,
-                self.settings.ibkr_port,
-                clientId=self.settings.ibkr_client_id,
+                self.profile.host,
+                self.profile.port,
+                clientId=self.profile.client_id,
+                readonly=True,
+                account=self.profile.account_id,
+                fetchFields=startup_fetch,
             )
 
             if self.settings.ibkr_market_data_type == "delayed":
@@ -167,7 +220,7 @@ class LiveIBKRClient(IBKRClient):
                 ib.reqMarketDataType(1)
 
             accounts = list(ib.managedAccounts())
-            account_id = self.settings.ibkr_account_id or (accounts[0] if accounts else "")
+            account_id = self.profile.account_id or (accounts[0] if accounts else "")
 
             account = self._build_account_snapshot(ib, account_id, now)
             positions = self._build_positions(ib, account_id)
@@ -177,11 +230,21 @@ class LiveIBKRClient(IBKRClient):
                     *{position.symbol for position in positions},
                 }
             )
-            quotes, ratio_payloads = self._build_quotes_and_ratio_payloads(ib, Stock, symbols, now)
-            reference_levels = self._build_reference_levels(ib, Stock, symbols, now, warnings)
+            contracts_by_symbol = self._build_stock_contracts(ib, Stock, symbols, warnings)
+            quotes, ratio_payloads = self._build_quotes_and_ratio_payloads(
+                ib,
+                contracts_by_symbol,
+                now,
+            )
+            reference_levels = self._build_reference_levels(
+                ib,
+                contracts_by_symbol,
+                now,
+                warnings,
+            )
             fundamentals = self._build_fundamentals(
                 ib,
-                Stock,
+                contracts_by_symbol,
                 symbols,
                 ratio_payloads,
                 now,
@@ -191,6 +254,8 @@ class LiveIBKRClient(IBKRClient):
             return BrokerSnapshotEnvelope(
                 mode="live",
                 status="connected",
+                profile=self.profile.name,
+                display_name=self.profile.display_name,
                 account=account,
                 positions=positions,
                 quotes=quotes,
@@ -211,8 +276,10 @@ class LiveIBKRClient(IBKRClient):
         return BrokerSnapshotEnvelope(
             mode="live",
             status="error",
+            profile=self.profile.name,
+            display_name=self.profile.display_name,
             account=AccountSnapshot(
-                account_id=self.settings.ibkr_account_id,
+                account_id=self.profile.account_id,
                 source="live",
                 updated_at=now,
             ),
@@ -221,6 +288,50 @@ class LiveIBKRClient(IBKRClient):
             reference_levels={},
             fundamentals={},
             warnings=warnings,
+        )
+
+    def test_connection(self) -> tuple[bool, list[str], str]:
+        try:
+            from ib_async import IB, StartupFetch
+        except ImportError:
+            return False, [], "ib_async is not installed. Install it before using IBKR mode."
+
+        ib = IB()
+        try:
+            startup_fetch = StartupFetch.ACCOUNT_UPDATES | StartupFetch.SUB_ACCOUNT_UPDATES
+            ib.connect(
+                self.profile.host,
+                self.profile.port,
+                clientId=self.profile.client_id,
+                readonly=True,
+                account=self.profile.account_id,
+                fetchFields=startup_fetch,
+            )
+            accounts = list(ib.managedAccounts())
+            if self.profile.account_id and self.profile.account_id not in accounts:
+                return (
+                    False,
+                    accounts,
+                    f"已连接 {self.profile.display_name}，但没有找到指定账户 {self.profile.account_id}。",
+                )
+            account_hint = f"识别到账户：{', '.join(accounts)}。" if accounts else "未返回账户列表。"
+            return True, accounts, f"{self.profile.display_name} 只读连接成功。{account_hint}"
+        except ConnectionRefusedError:
+            return False, [], self._connection_help("TWS 未监听该端口，或当前连接的是另一个 TWS 会话。")
+        except Exception as exc:
+            return False, [], self._connection_help(str(exc))
+        finally:
+            if getattr(ib, "isConnected", lambda: False)():
+                ib.disconnect()
+
+    def _connection_help(self, error_detail: str) -> str:
+        expected_port = 7497 if self.profile.name == "paper" else 7496
+        return (
+            f"{self.profile.display_name} 连接失败：{error_detail} "
+            f"请确认 TWS 已登录{' Paper Trading' if self.profile.name == 'paper' else '真实账户'}、"
+            "已开启 Enable ActiveX and Socket Clients、"
+            f"Socket Port 为 {self.profile.port}（默认应为 {expected_port}）、"
+            "Trusted IPs 允许 127.0.0.1，且 clientId 没有被其他 API 客户端占用。"
         )
 
     def _build_account_snapshot(self, ib, account_id: str, now: datetime) -> AccountSnapshot:
@@ -268,17 +379,40 @@ class LiveIBKRClient(IBKRClient):
             )
         return rows
 
-    def _build_quotes_and_ratio_payloads(
+    def _build_stock_contracts(
         self,
         ib,
         stock_cls,
         tracked_symbols: Sequence[str],
+        warnings: list[str],
+    ) -> dict[str, object]:
+        contracts: dict[str, object] = {}
+        unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
+
+        for symbol in unique_symbols:
+            contract = stock_cls(symbol, "SMART", "USD")
+            try:
+                qualified_contracts = ib.qualifyContracts(contract)
+            except Exception as exc:
+                warnings.append(f"Failed to qualify stock contract for {symbol}: {exc}")
+                continue
+
+            if not qualified_contracts:
+                warnings.append(f"Failed to qualify stock contract for {symbol}.")
+                continue
+
+            contracts[symbol] = qualified_contracts[0]
+
+        return contracts
+
+    def _build_quotes_and_ratio_payloads(
+        self,
+        ib,
+        contracts_by_symbol: dict[str, object],
         now: datetime,
     ) -> tuple[dict[str, QuoteSnapshot], dict[str, dict[str, float]]]:
         tickers = []
-        unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
-        for symbol in unique_symbols:
-            contract = stock_cls(symbol, "SMART", "USD")
+        for symbol, contract in sorted(contracts_by_symbol.items()):
             ticker = ib.reqMktData(contract, "258", False, False)
             tickers.append((symbol, ticker))
 
@@ -312,16 +446,13 @@ class LiveIBKRClient(IBKRClient):
     def _build_reference_levels(
         self,
         ib,
-        stock_cls,
-        tracked_symbols: Sequence[str],
+        contracts_by_symbol: dict[str, object],
         now: datetime,
         warnings: list[str],
     ) -> dict[str, PriceReferenceLevels]:
-        unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
         reference_levels: dict[str, PriceReferenceLevels] = {}
 
-        for symbol in unique_symbols:
-            contract = stock_cls(symbol, "SMART", "USD")
+        for symbol, contract in sorted(contracts_by_symbol.items()):
             try:
                 bars = ib.reqHistoricalData(
                     contract,
@@ -341,7 +472,7 @@ class LiveIBKRClient(IBKRClient):
     def _build_fundamentals(
         self,
         ib,
-        stock_cls,
+        contracts_by_symbol: dict[str, object],
         tracked_symbols: Sequence[str],
         ratio_payloads: dict[str, dict[str, float]],
         now: datetime,
@@ -351,7 +482,11 @@ class LiveIBKRClient(IBKRClient):
         snapshots: dict[str, FundamentalSnapshot] = {}
 
         for symbol in unique_symbols:
-            contract = stock_cls(symbol, "SMART", "USD")
+            contract = contracts_by_symbol.get(symbol)
+            if contract is None:
+                snapshots[symbol] = FundamentalSnapshot(source="live", as_of=now)
+                continue
+
             ratio_payload = ratio_payloads.get(symbol, {})
             xml_payloads: list[str] = []
 
@@ -533,6 +668,6 @@ class LiveIBKRClient(IBKRClient):
 @lru_cache(maxsize=1)
 def get_ibkr_client() -> IBKRClient:
     settings = get_settings()
-    if settings.ibkr_mode.lower() == "live":
+    if normalize_ibkr_mode(settings.ibkr_mode) == "ibkr":
         return LiveIBKRClient(settings)
     return MockIBKRClient(settings)

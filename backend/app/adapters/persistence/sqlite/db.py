@@ -43,6 +43,7 @@ def get_db():
 def init_db() -> None:
     import app.domains.alerts.models  # noqa: F401
     import app.domains.preferences.models  # noqa: F401
+    import app.domains.snapshot.models  # noqa: F401
     import app.domains.state.models  # noqa: F401
     import app.domains.watchlist.models  # noqa: F401
 

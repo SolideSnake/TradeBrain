@@ -1,3 +1,17 @@
-from app.domains.preferences.schemas import NotificationSettingsRead, NotificationSettingsUpdate
+from app.domains.preferences.schemas import (
+    IBKRConnectionTestRequest,
+    IBKRConnectionTestResult,
+    IBKRSettingsRead,
+    IBKRSettingsUpdate,
+    NotificationSettingsRead,
+    NotificationSettingsUpdate,
+)
 
-__all__ = ["NotificationSettingsRead", "NotificationSettingsUpdate"]
+__all__ = [
+    "IBKRConnectionTestRequest",
+    "IBKRConnectionTestResult",
+    "IBKRSettingsRead",
+    "IBKRSettingsUpdate",
+    "NotificationSettingsRead",
+    "NotificationSettingsUpdate",
+]

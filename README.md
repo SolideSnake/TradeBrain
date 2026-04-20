@@ -165,10 +165,19 @@ APP_PORT=8000
 DB_PATH=backend/tradebrain.db
 
 IBKR_MODE=mock
+IBKR_ACTIVE_PROFILE=paper
 IBKR_HOST=127.0.0.1
 IBKR_PORT=7497
 IBKR_CLIENT_ID=1
 IBKR_ACCOUNT_ID=
+IBKR_REAL_HOST=127.0.0.1
+IBKR_REAL_PORT=7496
+IBKR_REAL_CLIENT_ID=1
+IBKR_REAL_ACCOUNT_ID=
+IBKR_PAPER_HOST=127.0.0.1
+IBKR_PAPER_PORT=7497
+IBKR_PAPER_CLIENT_ID=2
+IBKR_PAPER_ACCOUNT_ID=
 IBKR_MARKET_DATA_TYPE=delayed
 IBKR_MARKET_DATA_WAIT_SECONDS=1.0
 
@@ -179,7 +188,9 @@ TELEGRAM_CHAT_ID=
 说明：
 
 - `IBKR_MODE=mock` 适合本地先看 UI，不依赖 TWS。
-- 如果要连真实 TWS，请改成 `IBKR_MODE=live`，并把端口改成和 TWS 一致。
+- 如果要连接 TWS，请改成 `IBKR_MODE=ibkr`；旧写法 `IBKR_MODE=live` 仍兼容。
+- `IBKR_ACTIVE_PROFILE=paper` 使用模拟 TWS，默认端口 `7497`；`real` 使用真实 TWS，默认端口 `7496`。
+- 更推荐在前端 `Settings` 页面保存和切换 IBKR 配置；同一时间只会激活真实或模拟中的一个。
 - Telegram 配置更推荐在前端 `Settings` 页面里填写，由后端本地保存，不建议长期直接写在 `.env`。
 
 ## 当前页面
@@ -188,7 +199,7 @@ TELEGRAM_CHAT_ID=
 - `Monitor`：watchlist、行情指标、PEG、估值标签、状态变化
 - `Alerts`：预警历史和 Telegram 发送记录
 - `Portfolio`：账户余额、持仓、浮盈亏
-- `Settings`：Telegram 配置与测试发送
+- `Settings`：IBKR 真实/模拟 TWS 配置、Telegram 配置与测试发送
 
 ## 当前后端 API
 
@@ -197,12 +208,16 @@ TELEGRAM_CHAT_ID=
 - `POST /api/watchlist`
 - `PATCH /api/watchlist/{entry_id}`
 - `DELETE /api/watchlist/{entry_id}`
-- `GET /api/snapshot`
+- `GET /api/snapshot`：读取最近一次成功快照；没有缓存时会首次生成
+- `POST /api/snapshot/refresh`：手动刷新快照，失败时保留旧快照
 - `GET /api/states`
 - `GET /api/alerts`
 - `GET /api/settings/notifications`
 - `PUT /api/settings/notifications`
 - `POST /api/settings/notifications/test`
+- `GET /api/settings/ibkr`
+- `PUT /api/settings/ibkr`
+- `POST /api/settings/ibkr/test`
 
 ## 怎么验收 MVP
 
@@ -217,9 +232,11 @@ TELEGRAM_CHAT_ID=
 
 1. 打开 TWS 或 IB Gateway
 2. 在 TWS 里开启 API socket
-3. 把 [\.env](D:\code\TradeBrain\.env) 里的 `IBKR_MODE` 改成 `live`
-4. 确认端口和 TWS 设置一致
-5. 刷新页面，确认 broker 状态变成 `connected`
+3. 打开 `Settings`，把 `IBKR` 数据模式改成 `IBKR TWS`
+4. 模拟账户选择 `模拟 TWS Paper`，确认端口是 `7497`
+5. 真实账户选择 `真实 TWS`，确认端口是 `7496`
+6. 点击对应 profile 的 `测试连接`
+7. 保存设置后刷新页面，确认 broker 状态变成 `connected`
 
 ### Telegram 联调验收
 

@@ -3,6 +3,7 @@ from app.domains.snapshot.schemas import (
     CanonicalSnapshot,
     CanonicalWatchlistItem,
     SnapshotMeta,
+    SnapshotResponse,
     SnapshotSummary,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "CanonicalSnapshot",
     "CanonicalWatchlistItem",
     "SnapshotMeta",
+    "SnapshotResponse",
     "SnapshotSummary",
 ]

@@ -5,10 +5,12 @@ import {
   CanonicalSnapshot,
   CreateWatchlistEntryPayload,
   Market,
+  SnapshotResponse,
   ValuationLabel,
   createWatchlistEntry,
   deleteWatchlistEntry,
   getSnapshot,
+  refreshSnapshot,
 } from "../shared/api";
 import { formatCurrency, formatPercent } from "../shared/formatters";
 import { KeyValueList, PageSection, StatCard } from "../shared/ui";
@@ -30,8 +32,10 @@ const defaultForm: CreateWatchlistEntryPayload = {
 
 export function MonitorPage() {
   const [snapshot, setSnapshot] = useState<CanonicalSnapshot | null>(null);
+  const [snapshotResponse, setSnapshotResponse] = useState<SnapshotResponse | null>(null);
   const [form, setForm] = useState<CreateWatchlistEntryPayload>(defaultForm);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -64,12 +68,32 @@ export function MonitorPage() {
     setLoading(true);
     try {
       const data = await getSnapshot();
-      setSnapshot(data);
-      setError(null);
+      applySnapshotResponse(data);
+      setError(data.last_error || null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load monitor snapshot.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRefreshSnapshot() {
+    setRefreshing(true);
+    try {
+      const data = await refreshSnapshot();
+      applySnapshotResponse(data);
+      setError(data.last_error || null);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "Failed to refresh monitor snapshot.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function applySnapshotResponse(response: SnapshotResponse) {
+    setSnapshotResponse(response);
+    if (response.snapshot) {
+      setSnapshot(response.snapshot);
     }
   }
 
@@ -94,7 +118,7 @@ export function MonitorPage() {
       await createWatchlistEntry(form);
       setForm(defaultForm);
       setError(null);
-      await loadSnapshot();
+      await handleRefreshSnapshot();
       setShowForm(false);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Failed to add symbol.");
@@ -107,7 +131,7 @@ export function MonitorPage() {
     try {
       await deleteWatchlistEntry(entryId);
       setError(null);
-      await loadSnapshot();
+      await handleRefreshSnapshot();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Failed to delete symbol.");
     }
@@ -154,6 +178,22 @@ export function MonitorPage() {
       default:
         return "--";
     }
+  }
+
+  function cacheStatusLabel(response: SnapshotResponse | null) {
+    if (!response) {
+      return "--";
+    }
+    if (response.cache_status === "failed") {
+      return "刷新失败，显示旧快照";
+    }
+    if (response.cache_status === "success") {
+      return response.from_cache ? "缓存快照" : "刚刚刷新";
+    }
+    if (response.cache_status === "empty") {
+      return "暂无快照";
+    }
+    return "刷新中";
   }
 
   function valuationClass(value: ValuationLabel | null) {
@@ -247,7 +287,10 @@ export function MonitorPage() {
         actions={
           <div className="actions-row">
             <button type="button" className="button button-secondary" onClick={() => void loadSnapshot()}>
-              刷新
+              读取缓存
+            </button>
+            <button type="button" className="button" onClick={() => void handleRefreshSnapshot()} disabled={refreshing}>
+              {refreshing ? "刷新中..." : "刷新快照"}
             </button>
             <button type="button" className="button" onClick={() => setShowForm((current) => !current)}>
               {showForm ? "收起新增表单" : "新增标的"}
@@ -265,6 +308,7 @@ export function MonitorPage() {
                 { label: "状态变化", value: `${summary.changed} 个`, tone: summary.changed > 0 ? "warning" : "positive" },
                 { label: "持仓标的", value: `${summary.inPosition} 个` },
                 { label: "缺失行情", value: `${summary.missingQuote} 个`, tone: summary.missingQuote > 0 ? "warning" : "positive" },
+                { label: "缓存状态", value: cacheStatusLabel(snapshotResponse), tone: snapshotResponse?.cache_status === "failed" ? "warning" : "positive" },
               ]}
             />
           </article>
@@ -388,7 +432,7 @@ export function MonitorPage() {
             ))}
           </div>
 
-          {loading ? <div className="table-empty">正在加载监控快照...</div> : null}
+          {loading ? <div className="table-empty">首次生成快照中...</div> : null}
 
           {!loading && sortedEntries.length === 0 ? (
             <div className="table-empty">还没有监控标的，先加入第一只股票或 ETF。</div>

@@ -17,6 +17,8 @@ class SnapshotMeta(BaseModel):
     generated_at: datetime
     broker_mode: Literal["mock", "live"]
     broker_status: Literal["mock", "connected", "error"]
+    broker_profile: Literal["mock", "real", "paper"] = "mock"
+    broker_display_name: str = "Mock 数据"
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -49,6 +51,8 @@ class CanonicalWatchlistItem(BaseModel):
 class BrokerSnapshotEnvelope(BaseModel):
     mode: Literal["mock", "live"]
     status: Literal["mock", "connected", "error"]
+    profile: Literal["mock", "real", "paper"] = "mock"
+    display_name: str = "Mock 数据"
     account: AccountSnapshot
     positions: list[PositionSnapshot]
     quotes: dict[str, QuoteSnapshot]
@@ -63,3 +67,13 @@ class CanonicalSnapshot(BaseModel):
     account: AccountSnapshot
     watchlist: list[CanonicalWatchlistItem]
     positions: list[PositionSnapshot]
+
+
+class SnapshotResponse(BaseModel):
+    snapshot: CanonicalSnapshot | None = None
+    cache_status: Literal["empty", "idle", "refreshing", "success", "failed"]
+    from_cache: bool
+    last_success_at: datetime | None = None
+    refresh_started_at: datetime | None = None
+    last_error_at: datetime | None = None
+    last_error: str = ""

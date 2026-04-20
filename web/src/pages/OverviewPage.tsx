@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 
-import { CanonicalSnapshot, getSnapshot } from "../shared/api";
+import { CanonicalSnapshot, SnapshotResponse, getSnapshot, refreshSnapshot } from "../shared/api";
 import { formatCurrency, formatDateTime } from "../shared/formatters";
 import { KeyValueList, PageSection, StatCard } from "../shared/ui";
 
 export function OverviewPage() {
   const [snapshot, setSnapshot] = useState<CanonicalSnapshot | null>(null);
+  const [snapshotResponse, setSnapshotResponse] = useState<SnapshotResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -17,12 +19,51 @@ export function OverviewPage() {
     setLoading(true);
     try {
       const nextSnapshot = await getSnapshot();
-      setSnapshot(nextSnapshot);
-      setError(null);
+      applySnapshotResponse(nextSnapshot);
+      setError(nextSnapshot.last_error || null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load snapshot.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRefreshSnapshot() {
+    setRefreshing(true);
+    try {
+      const nextSnapshot = await refreshSnapshot();
+      applySnapshotResponse(nextSnapshot);
+      setError(nextSnapshot.last_error || null);
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "Failed to refresh snapshot.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function applySnapshotResponse(response: SnapshotResponse) {
+    setSnapshotResponse(response);
+    if (response.snapshot) {
+      setSnapshot(response.snapshot);
+    }
+  }
+
+  function cacheStatusLabel(response: SnapshotResponse | null) {
+    if (!response) {
+      return "--";
+    }
+    switch (response.cache_status) {
+      case "success":
+        return response.from_cache ? "缓存快照" : "刚刚刷新";
+      case "failed":
+        return "刷新失败，显示旧快照";
+      case "refreshing":
+        return "刷新中";
+      case "empty":
+        return "暂无快照";
+      case "idle":
+      default:
+        return "空闲";
     }
   }
 
@@ -47,14 +88,19 @@ export function OverviewPage() {
         title="运行状态"
         description="先看快照是否可靠，再看今天是否有需要马上处理的异常。"
         actions={
-          <button type="button" className="button button-secondary" onClick={() => void loadSnapshot()}>
-            刷新快照
-          </button>
+          <div className="actions-row">
+            <button type="button" className="button button-secondary" onClick={() => void loadSnapshot()}>
+              读取缓存
+            </button>
+            <button type="button" className="button" onClick={() => void handleRefreshSnapshot()} disabled={refreshing}>
+              {refreshing ? "刷新中..." : "刷新快照"}
+            </button>
+          </div>
         }
       >
         {error ? <div className="banner banner-error">{error}</div> : null}
 
-        {loading && !snapshot ? <div className="table-empty">正在加载快照...</div> : null}
+        {loading && !snapshot ? <div className="table-empty">首次生成快照中...</div> : null}
 
         {snapshot ? (
           <>
@@ -64,7 +110,7 @@ export function OverviewPage() {
                 <h3>{warningCount > 0 || missingQuotes > 0 ? "当前快照需要复核" : "当前快照可直接使用"}</h3>
                 <p className="metric metric-compact">{snapshot.meta.broker_status}</p>
                 <p className="panel-note">
-                  模式 {snapshot.meta.broker_mode}，生成于 {formatDateTime(snapshot.meta.generated_at)}
+                  来源 {snapshot.meta.broker_display_name}，生成于 {formatDateTime(snapshot.meta.generated_at)}
                 </p>
               </article>
 
@@ -73,6 +119,8 @@ export function OverviewPage() {
                 <KeyValueList
                   items={[
                     { label: "Broker 状态", value: snapshot.meta.broker_status },
+                    { label: "数据来源", value: snapshot.meta.broker_display_name },
+                    { label: "缓存状态", value: cacheStatusLabel(snapshotResponse) },
                     { label: "Broker 警告", value: `${warningCount} 条`, tone: warningCount > 0 ? "warning" : "positive" },
                     {
                       label: "缺失行情",
@@ -92,7 +140,7 @@ export function OverviewPage() {
               <StatCard
                 label="账户净值"
                 value={formatCurrency(snapshot.account.net_liquidation, snapshot.account.currency, { compact: true })}
-                note={`来源：${snapshot.account.source}`}
+                note={`来源：${snapshot.meta.broker_display_name}`}
               />
               <StatCard
                 label="监控标的"
@@ -108,7 +156,7 @@ export function OverviewPage() {
               <StatCard
                 label="快照持仓"
                 value={snapshot.positions.length}
-                note={`watchlist 中有 ${snapshot.summary.symbols_in_position} 个标记为持仓`}
+                note={`最近成功 ${formatDateTime(snapshotResponse?.last_success_at ?? snapshot.meta.generated_at)}`}
               />
             </div>
 

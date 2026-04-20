@@ -4,10 +4,12 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.adapters.ibkr.client import IBKRClient, get_ibkr_client
+from app.adapters.ibkr.client import IBKRClient, LiveIBKRClient, MockIBKRClient
 from app.adapters.persistence.sqlite.watchlist_repository import WatchlistRepository
 from app.application.alert_router import AlertRouter
+from app.application.ibkr_settings_service import IBKRSettingsService
 from app.application.state_engine import StateEngine
+from app.config.settings import Settings, get_settings
 from app.domains.indicators.service import IndicatorService
 from app.domains.snapshot.schemas import (
     CanonicalSnapshot,
@@ -25,16 +27,21 @@ class SnapshotBuilder:
         indicator_service: IndicatorService | None = None,
         state_engine: StateEngine | None = None,
         alert_router: AlertRouter | None = None,
+        ibkr_settings_service: IBKRSettingsService | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self.watchlist_repository = watchlist_repository or WatchlistRepository()
-        self.ibkr_client = ibkr_client or get_ibkr_client()
+        self.ibkr_client = ibkr_client
         self.indicator_service = indicator_service or IndicatorService()
         self.state_engine = state_engine or StateEngine()
         self.alert_router = alert_router or AlertRouter()
+        self.ibkr_settings_service = ibkr_settings_service or IBKRSettingsService()
+        self.settings = settings or get_settings()
 
     def build(self, db: Session) -> CanonicalSnapshot:
         watchlist_entries = self.watchlist_repository.list(db)
-        broker_snapshot = self.ibkr_client.fetch_snapshot(
+        ibkr_client = self._resolve_ibkr_client(db)
+        broker_snapshot = ibkr_client.fetch_snapshot(
             [entry.symbol for entry in watchlist_entries if entry.enabled]
         )
         positions_by_symbol = {
@@ -98,6 +105,8 @@ class SnapshotBuilder:
                 generated_at=datetime.now(UTC),
                 broker_mode=broker_snapshot.mode,
                 broker_status=broker_snapshot.status,
+                broker_profile=broker_snapshot.profile,
+                broker_display_name=broker_snapshot.display_name,
                 warnings=broker_snapshot.warnings,
             ),
             summary=summary,
@@ -105,3 +114,12 @@ class SnapshotBuilder:
             watchlist=watchlist,
             positions=list(positions_by_symbol.values()),
         )
+
+    def _resolve_ibkr_client(self, db: Session) -> IBKRClient:
+        if self.ibkr_client is not None:
+            return self.ibkr_client
+
+        mode, profile = self.ibkr_settings_service.resolve_runtime_profile(db)
+        if mode == "ibkr":
+            return LiveIBKRClient(self.settings, profile)
+        return MockIBKRClient(self.settings)

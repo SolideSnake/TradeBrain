@@ -5,18 +5,23 @@ from sqlalchemy.orm import Session
 
 from app.adapters.persistence.sqlite.db import get_db
 from app.application.alert_router import AlertRouter
+from app.application.ibkr_settings_service import IBKRSettingsService
 from app.application.notification_settings_service import NotificationSettingsService
+from app.application.snapshot_cache_service import SnapshotCacheService
 from app.application.state_engine import StateEngine
-from app.application.snapshot_builder import SnapshotBuilder
 from app.application.watchlist_service import WatchlistService
 from app.config.settings import get_settings
 from app.domains.alerts.schemas import AlertEventRead
 from app.domains.preferences.schemas import (
+    IBKRConnectionTestRequest,
+    IBKRConnectionTestResult,
+    IBKRSettingsRead,
+    IBKRSettingsUpdate,
     NotificationSettingsRead,
     NotificationSettingsUpdate,
     NotificationTestResult,
 )
-from app.domains.snapshot.schemas import CanonicalSnapshot
+from app.domains.snapshot.schemas import SnapshotResponse
 from app.domains.state.schemas import WatchlistStateSnapshot
 from app.domains.watchlist.errors import DuplicateWatchlistSymbolError
 from app.domains.watchlist.schemas import (
@@ -30,6 +35,8 @@ watchlist_service = WatchlistService()
 state_engine = StateEngine()
 alert_router = AlertRouter()
 notification_settings_service = NotificationSettingsService()
+ibkr_settings_service = IBKRSettingsService()
+snapshot_cache_service = SnapshotCacheService()
 
 
 @router.get("/api/health")
@@ -43,9 +50,14 @@ def list_watchlist(db: Session = Depends(get_db)) -> list[WatchlistEntryRead]:
     return watchlist_service.list_entries(db)
 
 
-@router.get("/api/snapshot", response_model=CanonicalSnapshot)
-def get_snapshot(db: Session = Depends(get_db)) -> CanonicalSnapshot:
-    return SnapshotBuilder().build(db)
+@router.get("/api/snapshot", response_model=SnapshotResponse)
+def get_snapshot(db: Session = Depends(get_db)) -> SnapshotResponse:
+    return snapshot_cache_service.get_latest(db)
+
+
+@router.post("/api/snapshot/refresh", response_model=SnapshotResponse)
+def refresh_snapshot(db: Session = Depends(get_db)) -> SnapshotResponse:
+    return snapshot_cache_service.refresh(db)
 
 
 @router.get("/api/states", response_model=list[WatchlistStateSnapshot])
@@ -74,6 +86,27 @@ def update_notification_settings(
 @router.post("/api/settings/notifications/test", response_model=NotificationTestResult)
 def test_notification_settings(db: Session = Depends(get_db)) -> NotificationTestResult:
     return notification_settings_service.send_test_message(db)
+
+
+@router.get("/api/settings/ibkr", response_model=IBKRSettingsRead)
+def get_ibkr_settings(db: Session = Depends(get_db)) -> IBKRSettingsRead:
+    return ibkr_settings_service.get_settings(db)
+
+
+@router.put("/api/settings/ibkr", response_model=IBKRSettingsRead)
+def update_ibkr_settings(
+    payload: IBKRSettingsUpdate,
+    db: Session = Depends(get_db),
+) -> IBKRSettingsRead:
+    return ibkr_settings_service.update_settings(db, payload)
+
+
+@router.post("/api/settings/ibkr/test", response_model=IBKRConnectionTestResult)
+def test_ibkr_settings(
+    payload: IBKRConnectionTestRequest,
+    db: Session = Depends(get_db),
+) -> IBKRConnectionTestResult:
+    return ibkr_settings_service.test_connection(db, payload)
 
 
 @router.post(

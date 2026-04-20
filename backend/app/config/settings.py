@@ -16,10 +16,19 @@ class Settings(BaseSettings):
     db_path: str = "backend/tradebrain.db"
 
     ibkr_mode: str = "mock"
+    ibkr_active_profile: str = "paper"
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 7497
     ibkr_client_id: int = 1
     ibkr_account_id: str = ""
+    ibkr_real_host: str = "127.0.0.1"
+    ibkr_real_port: int = 7496
+    ibkr_real_client_id: int = 1
+    ibkr_real_account_id: str = ""
+    ibkr_paper_host: str = "127.0.0.1"
+    ibkr_paper_port: int = 7497
+    ibkr_paper_client_id: int = 2
+    ibkr_paper_account_id: str = ""
     ibkr_market_data_type: str = "delayed"
     ibkr_market_data_wait_seconds: float = 1.0
 
