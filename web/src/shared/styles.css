@@ -740,6 +740,183 @@ a {
   border: 1px solid rgba(122, 135, 168, 0.12);
 }
 
+.settings-stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.settings-panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: 18px;
+  background: rgba(16, 21, 31, 0.9);
+  border: 1px solid rgba(132, 147, 181, 0.14);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
+}
+
+.settings-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.settings-panel-header h3 {
+  margin: 0;
+}
+
+.settings-title-row,
+.settings-meta-row,
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.settings-title-row {
+  margin-bottom: var(--space-2);
+}
+
+.settings-actions {
+  margin-top: var(--space-1);
+}
+
+.settings-actions-top {
+  margin-top: 0;
+  justify-content: flex-end;
+}
+
+.settings-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 999px;
+  border: 1px solid rgba(122, 135, 168, 0.14);
+  background: rgba(30, 37, 51, 0.72);
+  color: #aeb9cc;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-badge-positive {
+  border-color: rgba(79, 212, 107, 0.2);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.settings-badge-warning {
+  border-color: rgba(240, 179, 95, 0.2);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.settings-badge-danger {
+  border-color: rgba(240, 111, 130, 0.2);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.settings-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.settings-field-grid label {
+  display: grid;
+  gap: var(--space-2);
+  color: #a8b7d0;
+}
+
+.settings-field-grid input,
+.settings-field-grid select {
+  width: 100%;
+  padding: var(--space-2) 12px;
+  border: 1px solid rgba(122, 135, 168, 0.16);
+  border-radius: 14px;
+  background: var(--bg-panel-strong);
+  color: var(--text-main);
+}
+
+.settings-field-grid select,
+.settings-field-grid option {
+  background: #111722;
+  color: var(--text-main);
+}
+
+.settings-field-grid input::placeholder {
+  color: var(--text-soft);
+}
+
+.settings-details-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.settings-details {
+  border: 1px solid rgba(122, 135, 168, 0.12);
+  border-radius: 16px;
+  background: rgba(13, 18, 27, 0.54);
+  overflow: hidden;
+}
+
+.settings-details-active {
+  border-color: rgba(79, 126, 255, 0.24);
+  background:
+    linear-gradient(90deg, rgba(61, 121, 255, 0.1), transparent 34%),
+    rgba(13, 18, 27, 0.7);
+}
+
+.settings-details summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-details summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid var(--text-soft);
+  border-bottom: 1px solid var(--text-soft);
+  transform: rotate(45deg);
+  transition: transform 0.16s ease;
+}
+
+.settings-details[open] summary::after {
+  transform: rotate(225deg);
+}
+
+.settings-details summary > span:first-child {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.settings-details summary strong {
+  color: var(--text-main);
+}
+
+.settings-details summary span span {
+  color: var(--text-muted);
+}
+
+.settings-details-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
 .button {
   border: none;
   border-radius: 14px;
@@ -893,10 +1070,15 @@ a {
 
   .content-topbar,
   .section-header,
+  .settings-panel-header,
   .table-header,
   .hero-grid {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .settings-field-grid {
+    grid-template-columns: 1fr;
   }
 
   .form-grid-2 {
@@ -922,5 +1104,17 @@ a {
     right: auto;
     left: 0;
     min-width: min(288px, calc(100vw - 48px));
+  }
+
+  .settings-details summary {
+    align-items: flex-start;
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+
+  .settings-details summary::after {
+    grid-column: 2;
+    grid-row: 1;
+    margin-top: var(--space-2);
   }
 }

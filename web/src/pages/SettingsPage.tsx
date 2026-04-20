@@ -1,10 +1,10 @@
-import { FormEvent, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 
 import {
-  IBKRConnectionProfile,
-  IBKRProfileName,
-  IBKRSettings,
-  NotificationSettings,
+  type IBKRConnectionProfile,
+  type IBKRProfileName,
+  type IBKRSettings,
+  type NotificationSettings,
   getIBKRSettings,
   getNotificationSettings,
   testIBKRConnection,
@@ -12,7 +12,6 @@ import {
   updateIBKRSettings,
   updateNotificationSettings,
 } from "../shared/api";
-import { PageSection, StatCard } from "../shared/ui";
 
 function sourceLabel(source: NotificationSettings["source"]) {
   switch (source) {
@@ -30,6 +29,20 @@ function ibkrSourceLabel(source: IBKRSettings["source"]) {
   return source === "database" ? "数据库" : "环境变量";
 }
 
+function modeLabel(mode: IBKRSettings["mode"]) {
+  return mode === "mock" ? "Mock 数据" : "IBKR TWS";
+}
+
+function profileLabel(profile: IBKRProfileName) {
+  return profile === "paper" ? "模拟 TWS" : "真实 TWS";
+}
+
+function profileDescription(profile: IBKRProfileName) {
+  return profile === "paper"
+    ? "建议先用 Paper 环境验收；TWS Paper 默认 socket 端口是 7497。"
+    : "只读读取真实账户数据；TWS 真实账户默认 socket 端口是 7496。";
+}
+
 function defaultIBKRProfile(profile: IBKRProfileName): IBKRConnectionProfile {
   return {
     host: "127.0.0.1",
@@ -39,10 +52,38 @@ function defaultIBKRProfile(profile: IBKRProfileName): IBKRConnectionProfile {
   };
 }
 
-function ProfileFields(props: {
+function SettingsBadge(props: { children: ReactNode; tone?: "default" | "positive" | "warning" | "danger" }) {
+  return <span className={`settings-badge settings-badge-${props.tone ?? "default"}`}>{props.children}</span>;
+}
+
+function SettingsPanel(props: {
   title: string;
-  warning?: string;
+  description: ReactNode;
+  actions?: ReactNode;
+  meta?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <article className="settings-panel">
+      <div className="settings-panel-header">
+        <div>
+          <div className="settings-title-row">
+            <h3>{props.title}</h3>
+            {props.meta}
+          </div>
+          <p className="panel-note">{props.description}</p>
+        </div>
+        {props.actions ? <div className="settings-actions settings-actions-top">{props.actions}</div> : null}
+      </div>
+      {props.children}
+    </article>
+  );
+}
+
+function ProfileDetails(props: {
+  profileName: IBKRProfileName;
   profile: IBKRConnectionProfile;
+  active: boolean;
   onChange: (nextProfile: IBKRConnectionProfile) => void;
   onTest: () => void;
   testing: boolean;
@@ -55,54 +96,62 @@ function ProfileFields(props: {
   }
 
   return (
-    <article className="panel">
-      <div className="section-header section-header-compact">
-        <div>
-          <h3>{props.title}</h3>
-          {props.warning ? <p className="panel-note">{props.warning}</p> : null}
+    <details className={`settings-details${props.active ? " settings-details-active" : ""}`} open={props.active}>
+      <summary>
+        <span>
+          <strong>{profileLabel(props.profileName)}</strong>
+          <span>{profileDescription(props.profileName)}</span>
+        </span>
+        <SettingsBadge tone={props.active ? "positive" : "default"}>
+          {props.active ? "当前激活" : "备用配置"}
+        </SettingsBadge>
+      </summary>
+
+      <div className="settings-details-body">
+        <div className="settings-field-grid">
+          <label>
+            <span>主机</span>
+            <input value={props.profile.host} onChange={(event) => updateField("host", event.target.value)} />
+          </label>
+
+          <label>
+            <span>端口</span>
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={props.profile.port}
+              onChange={(event) => updateField("port", event.currentTarget.valueAsNumber)}
+            />
+          </label>
+
+          <label>
+            <span>客户端 ID</span>
+            <input
+              type="number"
+              min={0}
+              value={props.profile.client_id}
+              onChange={(event) => updateField("client_id", event.currentTarget.valueAsNumber)}
+            />
+          </label>
+
+          <label>
+            <span>账户 ID</span>
+            <input
+              value={props.profile.account_id}
+              onChange={(event) => updateField("account_id", event.target.value)}
+              placeholder="留空则自动使用 TWS 返回的第一个账户"
+            />
+          </label>
         </div>
-        <button type="button" className="button button-secondary" onClick={props.onTest} disabled={props.testing}>
-          {props.testing ? "测试中..." : "测试连接"}
-        </button>
+
+        <div className="settings-actions">
+          <button type="button" className="button button-secondary" onClick={props.onTest} disabled={props.testing}>
+            {props.testing ? "测试中..." : `测试${profileLabel(props.profileName)}连接`}
+          </button>
+        </div>
       </div>
-
-      <div className="form-grid form-grid-2">
-        <label>
-          <span>Host</span>
-          <input value={props.profile.host} onChange={(event) => updateField("host", event.target.value)} />
-        </label>
-
-        <label>
-          <span>Port</span>
-          <input
-            type="number"
-            min={1}
-            max={65535}
-            value={props.profile.port}
-            onChange={(event) => updateField("port", event.currentTarget.valueAsNumber)}
-          />
-        </label>
-
-        <label>
-          <span>Client ID</span>
-          <input
-            type="number"
-            min={0}
-            value={props.profile.client_id}
-            onChange={(event) => updateField("client_id", event.currentTarget.valueAsNumber)}
-          />
-        </label>
-
-        <label>
-          <span>Account ID</span>
-          <input
-            value={props.profile.account_id}
-            onChange={(event) => updateField("account_id", event.target.value)}
-            placeholder="留空则自动使用 TWS 返回的第一个账户"
-          />
-        </label>
-      </div>
-    </article>
+    </details>
   );
 }
 
@@ -255,47 +304,73 @@ export function SettingsPage() {
     }
   }
 
+  const activeProfileProps =
+    activeProfile === "paper"
+      ? {
+          active: {
+            profileName: "paper" as const,
+            profile: paperProfile,
+            onChange: setPaperProfile,
+            testing: testingProfile === "paper",
+          },
+          standby: {
+            profileName: "real" as const,
+            profile: realProfile,
+            onChange: setRealProfile,
+            testing: testingProfile === "real",
+          },
+        }
+      : {
+          active: {
+            profileName: "real" as const,
+            profile: realProfile,
+            onChange: setRealProfile,
+            testing: testingProfile === "real",
+          },
+          standby: {
+            profileName: "paper" as const,
+            profile: paperProfile,
+            onChange: setPaperProfile,
+            testing: testingProfile === "paper",
+          },
+        };
+
   return (
     <section>
       <header className="page-header">
-        <p>配置入口尽量少而清楚，优先区分数据来源、当前激活环境和测试结果，避免真实账户与模拟账户混在一起。</p>
+        <p>设置页用于查看当前配置、修改字段、测试链路和保存应用；状态只做辅助提示，不再做大面积摘要卡。</p>
       </header>
 
-      <PageSection
-        title="IBKR 连接设置"
-        description="同一时间只激活一个 TWS 环境；真实和模拟共用同一个只读 IBKR 接入模块。"
-        actions={
-          <button type="button" className="button button-secondary" onClick={() => void loadIBKRSettings()}>
-            重新读取
-          </button>
-        }
-      >
-        {ibkrError ? <div className="banner banner-error">{ibkrError}</div> : null}
-        {ibkrSuccess ? <div className="banner banner-success">{ibkrSuccess}</div> : null}
-        {ibkrLoading ? <div className="table-empty">正在加载 IBKR 设置...</div> : null}
+      <div className="settings-stack">
+        <form className="settings-stack" onSubmit={handleIBKRSubmit}>
+          <SettingsPanel
+            title="交易数据源"
+            description="选择快照读取方式和当前激活的 TWS 环境。保存后刷新快照，前台数据会使用新的连接配置。"
+            actions={
+              <button type="button" className="button button-secondary" onClick={() => void loadIBKRSettings()}>
+                重新读取
+              </button>
+            }
+            meta={
+              <SettingsBadge tone={ibkrMode === "mock" ? "warning" : "positive"}>
+                {modeLabel(ibkrMode)}
+              </SettingsBadge>
+            }
+          >
+            {ibkrError ? <div className="banner banner-error">{ibkrError}</div> : null}
+            {ibkrSuccess ? <div className="banner banner-success">{ibkrSuccess}</div> : null}
+            {ibkrLoading ? <div className="table-empty">正在加载 IBKR 设置...</div> : null}
 
-        {!ibkrLoading ? (
-          <>
-            <div className="panel-grid">
-              <StatCard
-                label="当前模式"
-                value={ibkrMode === "mock" ? "Mock 数据" : "IBKR TWS"}
-                note={`配置来源：${ibkrSettings ? ibkrSourceLabel(ibkrSettings.source) : "--"}`}
-                tone={ibkrMode === "mock" ? "warning" : "positive"}
-              />
-              <StatCard
-                label="激活环境"
-                value={activeProfile === "paper" ? "模拟 TWS" : "真实 TWS"}
-                note={activeProfile === "paper" ? "默认端口 7497" : "默认端口 7496，只读连接"}
-                tone={activeProfile === "paper" ? "positive" : "warning"}
-              />
-              <StatCard label="真实账户端口" value={realProfile.port} note={`clientId ${realProfile.client_id}`} />
-              <StatCard label="模拟账户端口" value={paperProfile.port} note={`clientId ${paperProfile.client_id}`} />
-            </div>
+            {!ibkrLoading ? (
+              <>
+                <div className="settings-meta-row">
+                  <SettingsBadge>配置来源：{ibkrSettings ? ibkrSourceLabel(ibkrSettings.source) : "--"}</SettingsBadge>
+                  <SettingsBadge tone={activeProfile === "paper" ? "positive" : "warning"}>
+                    激活环境：{profileLabel(activeProfile)}
+                  </SettingsBadge>
+                </div>
 
-            <form className="form-grid" onSubmit={handleIBKRSubmit}>
-              <article className="panel">
-                <div className="form-grid form-grid-2">
+                <div className="settings-field-grid">
                   <label>
                     <span>数据模式</span>
                     <select value={ibkrMode} onChange={(event) => setIbkrMode(event.target.value as IBKRSettings["mode"])}>
@@ -313,116 +388,119 @@ export function SettingsPage() {
                   </label>
                 </div>
 
-                <div className="subtle-callout overview-secondary">
-                  真实账户 profile 也只会使用只读 API；但它读取的是你的真实账户数据。切换环境后，请刷新总览或账户页确认数据来源。
+                <div className="subtle-callout">
+                  真实账户 profile 也只会使用只读 API；但它读取的是你的真实账户数据。切换环境后，请刷新总览或资产页确认数据来源。
                 </div>
-              </article>
+              </>
+            ) : null}
+          </SettingsPanel>
 
-              <div className="panel-grid overview-secondary overview-grid-2">
-                <ProfileFields
-                  title="模拟 TWS Paper"
-                  warning="建议先在这里验收；TWS Paper 默认 socket port 是 7497。"
-                  profile={paperProfile}
-                  onChange={setPaperProfile}
-                  onTest={() => void handleIBKRTest("paper")}
-                  testing={testingProfile === "paper"}
+          {!ibkrLoading ? (
+            <SettingsPanel
+              title="连接配置"
+              description="当前激活的环境默认展开，备用环境可按需展开编辑。每个环境都可以单独测试连接。"
+              meta={<SettingsBadge>当前激活：{profileLabel(activeProfile)}</SettingsBadge>}
+            >
+              <div className="settings-details-stack">
+                <ProfileDetails
+                  profileName={activeProfileProps.active.profileName}
+                  profile={activeProfileProps.active.profile}
+                  active
+                  onChange={activeProfileProps.active.onChange}
+                  onTest={() => void handleIBKRTest(activeProfileProps.active.profileName)}
+                  testing={activeProfileProps.active.testing}
                 />
-                <ProfileFields
-                  title="真实 TWS"
-                  warning="只读读取真实账户数据；TWS 真实账户默认 socket port 是 7496。"
-                  profile={realProfile}
-                  onChange={setRealProfile}
-                  onTest={() => void handleIBKRTest("real")}
-                  testing={testingProfile === "real"}
+                <ProfileDetails
+                  profileName={activeProfileProps.standby.profileName}
+                  profile={activeProfileProps.standby.profile}
+                  active={false}
+                  onChange={activeProfileProps.standby.onChange}
+                  onTest={() => void handleIBKRTest(activeProfileProps.standby.profileName)}
+                  testing={activeProfileProps.standby.testing}
                 />
               </div>
 
-              <div className="actions-row">
+              <div className="settings-actions">
                 <button type="submit" className="button" disabled={ibkrSaving}>
                   {ibkrSaving ? "保存中..." : "保存 IBKR 设置"}
                 </button>
               </div>
-            </form>
-          </>
-        ) : null}
-      </PageSection>
+            </SettingsPanel>
+          ) : null}
+        </form>
 
-      <PageSection
-        title="Telegram 配置"
-        description="Bot token 留空时不会覆盖已保存值；建议每次改完后发一条测试消息验证整条链路。"
-        actions={
-          <button type="button" className="button button-secondary" onClick={() => void loadNotificationSettings()}>
-            重新读取
-          </button>
-        }
-      >
-        <div className="panel-grid">
-          <StatCard
-            label="Telegram 状态"
-            value={notificationSettings?.telegram_enabled ? "已就绪" : "待配置"}
-            note={`当前来源：${notificationSettings ? sourceLabel(notificationSettings.source) : "--"}`}
-            tone={notificationSettings?.telegram_enabled ? "positive" : "warning"}
-          />
-          <StatCard
-            label="Bot Token"
-            value={notificationSettings?.telegram_bot_token_configured ? "已保存" : "未保存"}
-            note={`掩码：${notificationSettings?.telegram_bot_token_masked ?? "--"}`}
-          />
-          <StatCard
-            label="Chat ID"
-            value={notificationSettings?.telegram_chat_id || "--"}
-            note="提醒消息会发送到这个目标。"
-          />
-        </div>
+        <form onSubmit={handleNotificationSubmit}>
+          <SettingsPanel
+            title="通知设置"
+            description="Bot token 留空时不会覆盖已保存值；保存后建议发送测试消息验证整条提醒链路。"
+            actions={
+              <button type="button" className="button button-secondary" onClick={() => void loadNotificationSettings()}>
+                重新读取
+              </button>
+            }
+            meta={
+              <SettingsBadge tone={notificationSettings?.telegram_enabled ? "positive" : "warning"}>
+                {notificationSettings?.telegram_enabled ? "Telegram 已就绪" : "Telegram 待配置"}
+              </SettingsBadge>
+            }
+          >
+            {notificationError ? <div className="banner banner-error">{notificationError}</div> : null}
+            {notificationSuccess ? <div className="banner banner-success">{notificationSuccess}</div> : null}
+            {notificationLoading ? <div className="table-empty">正在加载通知设置...</div> : null}
 
-        {notificationError ? <div className="banner banner-error">{notificationError}</div> : null}
-        {notificationSuccess ? <div className="banner banner-success">{notificationSuccess}</div> : null}
-        {notificationLoading ? <div className="table-empty">正在加载设置...</div> : null}
+            {!notificationLoading ? (
+              <>
+                <div className="settings-meta-row">
+                  <SettingsBadge>
+                    配置来源：{notificationSettings ? sourceLabel(notificationSettings.source) : "--"}
+                  </SettingsBadge>
+                  <SettingsBadge tone={notificationSettings?.telegram_bot_token_configured ? "positive" : "warning"}>
+                    Bot Token：{notificationSettings?.telegram_bot_token_configured ? "已保存" : "未保存"}
+                  </SettingsBadge>
+                  <SettingsBadge>掩码：{notificationSettings?.telegram_bot_token_masked ?? "--"}</SettingsBadge>
+                </div>
 
-        {!notificationLoading ? (
-          <article className="panel">
-            <form className="form-grid form-grid-2" onSubmit={handleNotificationSubmit}>
-              <label>
-                <span>Telegram Bot Token</span>
-                <input
-                  type="password"
-                  value={telegramBotToken}
-                  onChange={(event) => setTelegramBotToken(event.target.value)}
-                  placeholder={notificationSettings?.telegram_bot_token_configured ? "留空则保持当前 token" : "123456:ABCDEF..."}
-                />
-              </label>
+                <div className="settings-field-grid">
+                  <label>
+                    <span>Telegram Bot Token</span>
+                    <input
+                      type="password"
+                      value={telegramBotToken}
+                      onChange={(event) => setTelegramBotToken(event.target.value)}
+                      placeholder={notificationSettings?.telegram_bot_token_configured ? "留空则保持当前 token" : "123456:ABCDEF..."}
+                    />
+                  </label>
 
-              <label>
-                <span>Telegram Chat ID</span>
-                <input
-                  value={telegramChatId}
-                  onChange={(event) => setTelegramChatId(event.target.value)}
-                  placeholder="123456789"
-                />
-              </label>
+                  <label>
+                    <span>Telegram Chat ID</span>
+                    <input
+                      value={telegramChatId}
+                      onChange={(event) => setTelegramChatId(event.target.value)}
+                      placeholder="123456789"
+                    />
+                  </label>
+                </div>
 
-              <div className="form-span-2 subtle-callout">
-                当前配置来源：{notificationSettings ? sourceLabel(notificationSettings.source) : "--"}。
-                真实 token 不会回传前端，只显示掩码。
-              </div>
+                <div className="subtle-callout">真实 token 不会回传前端，只显示掩码。提醒消息会发送到当前 Chat ID。</div>
 
-              <div className="actions-row form-span-2">
-                <button type="submit" className="button" disabled={notificationSaving}>
-                  {notificationSaving ? "保存中..." : "保存设置"}
-                </button>
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  onClick={() => void handleNotificationTestSend()}
-                  disabled={notificationTesting}
-                >
-                  {notificationTesting ? "测试中..." : "发送测试消息"}
-                </button>
-              </div>
-            </form>
-          </article>
-        ) : null}
-      </PageSection>
+                <div className="settings-actions">
+                  <button type="submit" className="button" disabled={notificationSaving}>
+                    {notificationSaving ? "保存中..." : "保存通知设置"}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => void handleNotificationTestSend()}
+                    disabled={notificationTesting}
+                  >
+                    {notificationTesting ? "测试中..." : "发送测试消息"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </SettingsPanel>
+        </form>
+      </div>
     </section>
   );
 }
