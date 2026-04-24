@@ -2,19 +2,23 @@
 
 ## 文档信息
 
-- 版本：v0.2
+- 版本：v0.3
 - 状态：当前有效（长期模块蓝图）
-- 更新日期：2026-04-17
+- 更新日期：2026-04-24
 - 适用范围：TradeBrain 第一版
 - 文档目的：明确系统主链路、模块边界、模块依赖、第一版实现优先级与参考项目，作为后续 MVP、技术方案和编码实现的上游文档
 
 ## 0. 当前阶段说明
 
-截至 `2026-04-17`，TradeBrain 第一版 MVP 已完成。
+截至 `2026-04-24`，TradeBrain 第一版 MVP 已完成，并已完成提醒规则 v1、快照 pipeline 重构、策略/评分/扫描最小脚手架。
 
 当前已落地的 MVP 子链路为：
 
-`数据接入 -> 标准化快照 -> 指标计算 -> PEG 估值状态 -> 预警路由 -> 看板展示`
+`数据接入 -> 标准化快照 -> 指标计算 -> PEG 估值状态 -> 预警判定 -> 通知发送 -> 看板展示`
+
+当前额外落地的后续链路为：
+
+`CanonicalSnapshot -> StrategyEvaluator -> ScoringService -> ScannerService -> /api/scanner -> Monitor 策略线索`
 
 本文件保留的是更长期的模块蓝图，因此仍保留 `tasks/`、更复杂策略和更完整投影层等扩展模块，不代表它们都已在当前 MVP 中实现。
 
@@ -50,11 +54,11 @@ TradeBrain 第一版的框架设计要满足以下目标：
 
 TradeBrain 长期主链路规划为：
 
-`数据接入 -> 标准化快照 -> 指标计算 -> 状态判断 -> 任务生成 -> 预警路由 -> 看板投影 -> 页面展示`
+`数据接入 -> 标准化快照 -> 指标计算 -> 状态判断 -> 任务生成 -> 预警判定 -> 通知发送 -> 看板投影 -> 页面展示`
 
 当前 MVP 已实际落地的链路为：
 
-`数据接入 -> 标准化快照 -> 指标计算 -> PEG 状态判断 -> 预警路由 -> 页面展示`
+`数据接入 -> 标准化快照 -> 指标计算 -> PEG 状态判断 -> 预警判定 -> 通知发送 -> 页面展示`
 
 说明如下：
 
@@ -84,14 +88,17 @@ tradebrain/
     market/                 # 行情标准化、K线与快照领域模型
     portfolio/              # 账户、持仓、风险敞口领域模型
     indicators/             # 纯函数指标计算
-    strategy/               # 规则判断、状态机
+    strategy/               # 策略计划与策略判断
+    scoring/                # 标的评分
+    scanner/                # 扫描候选与策略线索
     tasks/                  # 交易任务模型、任务状态
-    alerts/                 # 预警模型、去重、节流规则
+    alerting/               # 预警判定规则、候选消息生成
+    alerts/                 # 预警历史模型、发送结果记录
   application/             # 用例层与编排层
     build_snapshot.py
     evaluate_state.py
     plan_tasks.py
-    route_alerts.py
+    notifications/          # 通知发送、预警历史保存、通道选择
     project_dashboard.py
   adapters/
     ibkr/                   # ib_async / IBKR 接入
@@ -255,9 +262,10 @@ tradebrain/
 
 职责：
 
-- 基于标准化快照和指标结果，输出结构化状态。
+- 基于标准化快照、指标结果和用户计划，输出结构化策略判断。
+- 后续买入区间、卖出区间、止盈、止损应放在这里或专门的策略计划子模块中，不继续塞进 watchlist。
 
-第一版统一状态：
+长期统一状态：
 
 - `观察`
 - `接近触发`
@@ -294,11 +302,40 @@ tradebrain/
 - 为什么
 - 多紧急
 
-### 5.10 `domains/alerts/`
+### 5.9.1 `domains/scoring/`
 
 职责：
 
-- 定义预警模型、去重策略、节流策略与消息等级。
+- 对标的做轻量评分，输出总分和评分拆解。
+- 第一版评分基于估值标签、52W 回撤和日内跌幅。
+
+原则：
+
+- 输入来自 `CanonicalSnapshot` 中的标准化字段。
+- 不直接访问 IBKR、数据库或前端状态。
+- 不替代交易策略，只提供排序和提示信号。
+
+### 5.9.2 `domains/scanner/`
+
+职责：
+
+- 组合 `strategy` 和 `scoring`，输出候选标的。
+- 为 `/api/scanner` 和前端 `Monitor` 策略线索区提供数据。
+
+原则：
+
+- 不修改 watchlist。
+- 不写入快照。
+- 不进入 `SnapshotBuilder`。
+- 优先作为独立查询入口，而不是扩展 `CanonicalSnapshot` 主契约。
+
+### 5.10 `domains/alerting/` 与 `domains/alerts/`
+
+职责：
+
+- `domains/alerting/` 定义预警判定规则、消息生成和提醒候选。
+- `domains/alerts/` 定义已生成预警事件、发送状态和历史记录。
+- 告警判断不直接依赖 Telegram、数据库或前端页面。
 
 第一版重要事件：
 
@@ -320,7 +357,7 @@ tradebrain/
 - `build_snapshot.py`
 - `evaluate_state.py`
 - `plan_tasks.py`
-- `route_alerts.py`
+- `notifications/service.py`
 - `project_dashboard.py`
 
 原则：
@@ -347,13 +384,14 @@ tradebrain/
 
 职责：
 
-- 把内部预警模型转换成 Telegram 消息
-- 负责真正发送消息
+- 接收已经生成好的通知文本
+- 调用 Telegram API 发送消息
 
 不负责：
 
 - 决定是否提醒
 - 决定消息优先级
+- 保存预警历史
 
 ### 5.14 `adapters/persistence/sqlite/`
 
@@ -423,14 +461,18 @@ tradebrain/
 
 - 提供本地 Web 看板界面。
 
-第一版页面：
+当前已落地页面：
 
 - 首页总览
 - 监控列表页
-- 标的详情页
-- 任务中心页
 - 账户持仓页
 - 配置页
+- 提醒规则页
+
+长期可补页面：
+
+- 标的详情页
+- 任务中心页
 
 ### 5.19 `observability/`
 
@@ -452,6 +494,7 @@ tradebrain/
 
 - `domains/` 不能依赖 `adapters/`
 - `domains/` 不能依赖 `apps/`
+- `domains/scanner` 可以组合其他 domain service，但不应依赖数据库。
 - `application/` 可以依赖 `domains/` 和 `core/ports/`
 - `adapters/` 实现 `core/ports/` 中定义的接口
 - `apps/` 只能依赖 `application/`、`projections/` 和读接口
@@ -474,6 +517,7 @@ tradebrain/
 
 - `CanonicalSnapshot` 是系统判断的统一输入
 - `StrategyState` 是规则引擎的统一输出
+- `ScannerCandidate` 是策略线索的统一输出
 - `Task` 是给用户执行的统一动作单元
 - `Alert` 是对外推送和站内提示的统一消息单元
 - `DashboardRow` 是前端列表的统一展示单元
@@ -600,7 +644,7 @@ TradeBrain 第一版应按以下原则推进：
 
 这份模块设计文档对应的第一阶段工作已完成。下一步应按如下顺序继续：
 
-1. 在当前 MVP 基础上做 live 联调和稳定化
-2. 根据使用反馈决定下一阶段模块扩展
-3. 如有需要，再补数据表设计和页面信息架构
-4. 进入下一阶段实现
+1. 抽出策略计划模型：买入区间、卖出区间、止损、止盈、计划状态
+2. 让提醒规则可以引用策略计划字段
+3. 继续扩展 scanner 的候选逻辑和前端展示
+4. 在当前 MVP 基础上做 live/paper 联调和稳定化

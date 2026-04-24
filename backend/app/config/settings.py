@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     ibkr_paper_client_id: int = 2
     ibkr_paper_account_id: str = ""
     ibkr_market_data_type: str = "delayed"
-    ibkr_market_data_wait_seconds: float = 1.0
+    ibkr_market_data_wait_seconds: float = 8.0
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

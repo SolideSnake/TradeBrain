@@ -2,17 +2,21 @@
 
 ## 文档信息
 
-- 版本：v0.2
+- 版本：v0.3
 - 状态：当前有效（MVP v1 落地版）
-- 更新日期：2026-04-17
+- 更新日期：2026-04-24
 - 适用范围：TradeBrain 第一版 MVP
 - 文档目的：明确第一版的技术选型、运行方式、代码落地结构、数据流、存储方式、接口方案和实现原则，并反映 MVP v1 的已落地技术现实
 
 ## 0. 当前落地说明
 
-截至 `2026-04-17`，TradeBrain 第一版 MVP 已完成。当前真正落地的主链路为：
+截至 `2026-04-24`，TradeBrain 第一版 MVP 已完成。当前真正落地的主链路为：
 
-`IBKR / mock -> CanonicalSnapshot -> 指标 -> PEG 估值标签 -> 状态变化检测 -> Telegram 预警 -> Web 看板`
+`IBKR / mock -> SnapshotBuilder -> CanonicalSnapshot -> SnapshotPipelineService -> 状态/提醒 -> SnapshotCacheService -> Web 看板`
+
+当前已经落地的策略线索链路为：
+
+`CanonicalSnapshot -> StrategyEvaluator -> ScoringService -> ScannerService -> /api/scanner -> Monitor 策略线索`
 
 当前已实现范围：
 
@@ -22,6 +26,10 @@
 - PEG 驱动状态引擎
 - Telegram 配置页与测试发送
 - Windows 一键安装与一键启动脚本
+- IBKR 真实/模拟 profile 单切换
+- 快照缓存与后端自动刷新
+- 可配置提醒规则 v1
+- 策略/评分/扫描最小脚手架
 
 当前未落地、仍属于后续阶段的内容：
 
@@ -29,6 +37,7 @@
 - WebSocket 增量推送
 - 图表增强
 - 更复杂的策略 DSL
+- 独立策略计划数据库表
 
 ## 1. 技术方案目标
 
@@ -229,6 +238,14 @@ TradeBrain/
 - `web/src/` 单独管理前端页面与组件。
 - `docs/` 持续保存需求、模块设计、MVP、技术方案等文档。
 
+当前实际重点 application service：
+
+- `SnapshotBuilder`：只构建标准化快照。
+- `SnapshotPipelineService`：编排快照、状态引擎和通知。
+- `SnapshotCacheService`：缓存最近一次成功快照，失败保留旧数据。
+- `NotificationService`：发送 Telegram、记录历史和规则统计。
+- `ScannerApplicationService`：读取最近快照并调用扫描域服务。
+
 ## 5. 运行模型
 
 ### 5.1 总体运行方式
@@ -327,14 +344,16 @@ TradeBrain/
 
 1. 从 `config` 读取 watchlist 和系统配置
 2. `adapters/ibkr` 拉取账户、持仓和行情
-3. `application/build_snapshot.py` 构建 `CanonicalSnapshot`
+3. `SnapshotBuilder` 构建 `CanonicalSnapshot`
 4. `domains/indicators` 计算核心指标
-5. `application/evaluate_state.py` 生成 `StrategyState`
-6. `application/plan_tasks.py` 生成任务变化
-7. `application/route_alerts.py` 生成或发送预警
-8. `application/project_dashboard.py` 更新读模型
-9. `apps/api` 提供 REST 和 WebSocket
-10. `apps/web` 读取数据并展示
+5. `SnapshotPipelineService` 调用 `StateEngine` 附加状态
+6. `domains/alerting` 根据规则生成预警候选
+7. `application/notifications/service.py` 发送通知并保存预警历史
+8. `SnapshotCacheService` 保存最近一次成功快照
+9. `api` 提供 REST
+10. `web` 读取数据并展示
+
+策略线索不进入快照构建主链路，而是通过独立 `/api/scanner` 读取最近快照后计算。
 
 ### 7.2 异常流程
 
@@ -350,23 +369,32 @@ TradeBrain/
 
 ### 8.1 REST API
 
-第一版建议提供以下 REST API：
+当前已实现的主要 REST API：
 
 - `GET /api/health`
-- `GET /api/system/status`
-- `GET /api/dashboard/overview`
-- `GET /api/dashboard/assets`
-- `GET /api/dashboard/assets/{asset_id}`
-- `GET /api/tasks`
-- `PATCH /api/tasks/{task_id}`
-- `GET /api/portfolio/account`
-- `GET /api/portfolio/positions`
 - `GET /api/watchlist`
 - `POST /api/watchlist`
-- `PATCH /api/watchlist/{asset_id}`
-- `DELETE /api/watchlist/{asset_id}`
-- `POST /api/actions/reload`
-- `POST /api/actions/test-telegram`
+- `PATCH /api/watchlist/{entry_id}`
+- `DELETE /api/watchlist/{entry_id}`
+- `GET /api/snapshot`
+- `POST /api/snapshot/refresh`
+- `GET /api/states`
+- `GET /api/scanner`
+- `GET /api/alerts`
+- `GET /api/alert-rules`
+- `POST /api/alert-rules`
+- `PATCH /api/alert-rules/{rule_id}`
+- `DELETE /api/alert-rules/{rule_id}`
+- `GET /api/alert-rules/metadata`
+- `POST /api/alert-rules/reset-counters`
+- `GET /api/settings/notifications`
+- `PUT /api/settings/notifications`
+- `POST /api/settings/notifications/test`
+- `GET /api/settings/ibkr`
+- `PUT /api/settings/ibkr`
+- `POST /api/settings/ibkr/test`
+- `GET /api/settings/snapshot-refresh`
+- `PUT /api/settings/snapshot-refresh`
 
 ### 8.2 WebSocket
 
@@ -392,12 +420,13 @@ TradeBrain/
 
 ### 9.1 页面结构
 
-MVP 前端只做 4 页：
+当前前端已落地页面：
 
-- 首页总览
-- 监控列表页
-- 任务中心页
-- 账户持仓页
+- `Overview`：总览
+- `Monitor`：追踪、指标和策略线索
+- `Alerts`：提醒规则管理
+- `Portfolio`：账户与持仓
+- `Settings`：IBKR、Telegram、快照刷新配置
 
 ### 9.2 前端数据策略
 
@@ -551,7 +580,8 @@ MVP 前端只做 4 页：
 
 基于本技术方案，下一步应继续补齐：
 
-1. live 基本面字段质量验证
-2. 真实 Telegram 联调
-3. WebSocket 增量更新评估
-4. 下一阶段功能范围定义
+1. 策略计划模型和表结构
+2. 真实/paper TWS 数据质量验证
+3. 真实 Telegram 联调
+4. WebSocket 增量更新评估
+5. 下一阶段功能范围定义

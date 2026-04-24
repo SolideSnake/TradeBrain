@@ -90,3 +90,13 @@ class IBKRConnectionTestResult(BaseModel):
     account_id: str
     accounts: list[str] = Field(default_factory=list)
     detail: str
+
+
+class SnapshotRefreshSettingsUpdate(BaseModel):
+    enabled: bool | None = None
+    interval_seconds: int | None = Field(default=None, ge=300, le=3600)
+
+
+class SnapshotRefreshSettingsRead(BaseModel):
+    enabled: bool
+    interval_seconds: int

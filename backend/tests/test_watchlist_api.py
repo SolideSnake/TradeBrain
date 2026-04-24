@@ -36,6 +36,29 @@ def test_watchlist_crud(client):
     assert final_list_response.json() == []
 
 
+def test_watchlist_create_accepts_symbol_only(client):
+    create_response = client.post("/api/watchlist", json={"symbol": "aapl"})
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["symbol"] == "AAPL"
+    assert created["name"] == "Apple Inc."
+    assert created["market"] == "US"
+    assert created["asset_type"] == "stock"
+    assert created["group_name"] == "default"
+    assert created["enabled"] is True
+    assert created["in_position"] is False
+
+
+def test_watchlist_create_uses_symbol_as_unknown_name_fallback(client):
+    create_response = client.post("/api/watchlist", json={"symbol": "xyzq"})
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["symbol"] == "XYZQ"
+    assert created["name"] == "XYZQ"
+
+
 def test_watchlist_rejects_duplicate_symbol(client):
     payload = {
         "symbol": "msft",

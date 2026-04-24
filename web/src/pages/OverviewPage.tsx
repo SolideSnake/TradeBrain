@@ -1,71 +1,12 @@
-import { useEffect, useState } from "react";
-
-import { CanonicalSnapshot, SnapshotResponse, getSnapshot, refreshSnapshot } from "../shared/api";
+import { useSnapshotResource } from "../hooks/useSnapshotResource";
 import { formatCurrency, formatDateTime } from "../shared/formatters";
-import { KeyValueList, PageSection, StatCard } from "../shared/ui";
+import { formatSnapshotCacheStatus } from "../shared/snapshotStatus";
+import { KeyValueList, StatCard } from "../shared/ui";
 
 export function OverviewPage() {
-  const [snapshot, setSnapshot] = useState<CanonicalSnapshot | null>(null);
-  const [snapshotResponse, setSnapshotResponse] = useState<SnapshotResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void loadSnapshot();
-  }, []);
-
-  async function loadSnapshot() {
-    setLoading(true);
-    try {
-      const nextSnapshot = await getSnapshot();
-      applySnapshotResponse(nextSnapshot);
-      setError(nextSnapshot.last_error || null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load snapshot.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleRefreshSnapshot() {
-    setRefreshing(true);
-    try {
-      const nextSnapshot = await refreshSnapshot();
-      applySnapshotResponse(nextSnapshot);
-      setError(nextSnapshot.last_error || null);
-    } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : "Failed to refresh snapshot.");
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  function applySnapshotResponse(response: SnapshotResponse) {
-    setSnapshotResponse(response);
-    if (response.snapshot) {
-      setSnapshot(response.snapshot);
-    }
-  }
-
-  function cacheStatusLabel(response: SnapshotResponse | null) {
-    if (!response) {
-      return "--";
-    }
-    switch (response.cache_status) {
-      case "success":
-        return response.from_cache ? "缓存快照" : "刚刚刷新";
-      case "failed":
-        return "刷新失败，显示旧快照";
-      case "refreshing":
-        return "刷新中";
-      case "empty":
-        return "暂无快照";
-      case "idle":
-      default:
-        return "空闲";
-    }
-  }
+  const { snapshot, snapshotResponse, loading, error } = useSnapshotResource({
+    loadErrorMessage: "Failed to load snapshot.",
+  });
 
   const warningCount = snapshot?.meta.warnings.length ?? 0;
   const missingQuotes = snapshot
@@ -84,20 +25,8 @@ export function OverviewPage() {
         <p>把开盘前必须确认的几件事压到第一屏，先判断数据能不能信，再决定下一步去监控、提醒还是持仓。</p>
       </header>
 
-      <PageSection
-        title="运行状态"
-        description="先看快照是否可靠，再看今天是否有需要马上处理的异常。"
-        actions={
-          <div className="actions-row">
-            <button type="button" className="button button-secondary" onClick={() => void loadSnapshot()}>
-              读取缓存
-            </button>
-            <button type="button" className="button" onClick={() => void handleRefreshSnapshot()} disabled={refreshing}>
-              {refreshing ? "刷新中..." : "刷新快照"}
-            </button>
-          </div>
-        }
-      >
+      <section className="section-block">
+        <p className="panel-note section-intro">先看快照是否可靠，再看今天是否有需要马上处理的异常。</p>
         {error ? <div className="banner banner-error">{error}</div> : null}
 
         {loading && !snapshot ? <div className="table-empty">首次生成快照中...</div> : null}
@@ -120,7 +49,7 @@ export function OverviewPage() {
                   items={[
                     { label: "Broker 状态", value: snapshot.meta.broker_status },
                     { label: "数据来源", value: snapshot.meta.broker_display_name },
-                    { label: "缓存状态", value: cacheStatusLabel(snapshotResponse) },
+                    { label: "缓存状态", value: formatSnapshotCacheStatus(snapshotResponse) },
                     { label: "Broker 警告", value: `${warningCount} 条`, tone: warningCount > 0 ? "warning" : "positive" },
                     {
                       label: "缺失行情",
@@ -190,7 +119,7 @@ export function OverviewPage() {
             </div>
           </>
         ) : null}
-      </PageSection>
+      </section>
     </section>
   );
 }

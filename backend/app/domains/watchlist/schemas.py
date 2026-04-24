@@ -28,8 +28,25 @@ class WatchlistEntryBase(BaseModel):
         return value.strip()
 
 
-class WatchlistEntryCreate(WatchlistEntryBase):
-    pass
+class WatchlistEntryCreate(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32)
+    name: str | None = Field(default=None, max_length=128)
+    market: Market = Market.US
+    asset_type: AssetType = AssetType.STOCK
+    group_name: str = Field(default="default", min_length=1, max_length=64)
+    enabled: bool = True
+    in_position: bool = False
+    notes: str = ""
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        return value.strip().upper()
+
+    @field_validator("name", "group_name", "notes")
+    @classmethod
+    def trim_text(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else value
 
 
 class WatchlistEntryUpdate(BaseModel):

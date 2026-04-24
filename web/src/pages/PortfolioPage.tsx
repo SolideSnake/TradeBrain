@@ -1,14 +1,9 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo } from "react";
 
-import {
-  type CanonicalSnapshot,
-  type PositionSnapshot,
-  type SnapshotResponse,
-  getSnapshot,
-  refreshSnapshot,
-} from "../shared/api";
+import { useSnapshotResource } from "../hooks/useSnapshotResource";
+import { type CanonicalSnapshot, type PositionSnapshot } from "../shared/api";
 import { formatCurrency, formatDateTime, formatPercent } from "../shared/formatters";
-import { PageSection } from "../shared/ui";
+import { formatSnapshotCacheStatus } from "../shared/snapshotStatus";
 
 const PIE_COLORS = ["#4f7eff", "#4fd46b", "#f0b35f", "#f06f82", "#8f7dff", "#42cbd4"];
 
@@ -92,6 +87,7 @@ function PortfolioKpiCard(props: {
   tone?: "default" | "positive" | "danger";
   sideLabel?: string;
   sideValue?: ReactNode;
+  headerAction?: ReactNode;
 }) {
   const toneClassName =
     props.tone === "positive" ? " value-positive" : props.tone === "danger" ? " value-negative" : "";
@@ -100,10 +96,15 @@ function PortfolioKpiCard(props: {
     <article className="panel portfolio-kpi-card">
       <div className="portfolio-kpi-top">
         <p className="stat-label">{props.label}</p>
-        {props.sideLabel ? (
-          <div className="portfolio-kpi-side">
-            <span>{props.sideLabel}</span>
-            <strong>{props.sideValue}</strong>
+        {props.headerAction || props.sideLabel ? (
+          <div className="portfolio-kpi-actions">
+            {props.headerAction}
+            {props.sideLabel ? (
+              <div className="portfolio-kpi-side">
+                <span>{props.sideLabel}</span>
+                <strong>{props.sideValue}</strong>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -124,10 +125,13 @@ function AccountSummaryBadge(props: {
 }) {
   return (
     <div className="account-badge-wrap">
-      <button type="button" className="account-badge" aria-label="查看账户概览">
+      <span className="account-badge" tabIndex={0} aria-label="账户概览">
         <span>账户</span>
+        <span className="account-badge-separator" aria-hidden="true">
+          ·
+        </span>
         <strong>{props.accountId || "--"}</strong>
-      </button>
+      </span>
       <div className="account-badge-popover" role="tooltip">
         <div className="kv-row">
           <span className="kv-label">持仓数量</span>
@@ -223,15 +227,9 @@ function PortfolioPieChart(props: {
 }
 
 export function PortfolioPage() {
-  const [snapshot, setSnapshot] = useState<CanonicalSnapshot | null>(null);
-  const [snapshotResponse, setSnapshotResponse] = useState<SnapshotResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void loadSnapshot();
-  }, []);
+  const { snapshot, snapshotResponse, loading, error } = useSnapshotResource({
+    loadErrorMessage: "Failed to load portfolio snapshot.",
+  });
 
   const totals = useMemo(() => {
     const positions = snapshot?.positions ?? [];
@@ -245,89 +243,12 @@ export function PortfolioPage() {
     };
   }, [snapshot]);
 
-  async function loadSnapshot() {
-    setLoading(true);
-    try {
-      const nextSnapshot = await getSnapshot();
-      applySnapshotResponse(nextSnapshot);
-      setError(nextSnapshot.last_error || null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load portfolio snapshot.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleRefreshSnapshot() {
-    setRefreshing(true);
-    try {
-      const nextSnapshot = await refreshSnapshot();
-      applySnapshotResponse(nextSnapshot);
-      setError(nextSnapshot.last_error || null);
-    } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : "Failed to refresh portfolio snapshot.");
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  function applySnapshotResponse(response: SnapshotResponse) {
-    setSnapshotResponse(response);
-    if (response.snapshot) {
-      setSnapshot(response.snapshot);
-    }
-  }
-
-  function cacheStatusLabel(response: SnapshotResponse | null) {
-    if (!response) {
-      return "--";
-    }
-    if (response.cache_status === "failed") {
-      return "刷新失败，显示旧快照";
-    }
-    if (response.cache_status === "success") {
-      return response.from_cache ? "缓存快照" : "刚刚刷新";
-    }
-    if (response.cache_status === "empty") {
-      return "暂无快照";
-    }
-    return "刷新中";
-  }
-
   const currency = snapshot?.account.currency ?? "USD";
   const positionSlices = useMemo(() => buildPositionSlices(snapshot?.positions ?? [], currency), [currency, snapshot?.positions]);
 
   return (
     <section>
-      <header className="page-header">
-        <p>先看账户资金，再看当前持仓分布与每只持仓的盈亏表现。</p>
-      </header>
-
-      <PageSection
-        title="账户快照"
-        description="和追踪页共用同一个快照，这里更强调资金与仓位结构。"
-        actions={
-          <div className="actions-row">
-            {snapshot ? (
-              <AccountSummaryBadge
-                accountId={snapshot.account.account_id}
-                positionCount={totals.count}
-                investedValue={totals.investedValue}
-                currency={currency}
-                source={snapshot.meta.broker_display_name}
-                cacheStatus={cacheStatusLabel(snapshotResponse)}
-                updatedAt={snapshot.account.updated_at}
-              />
-            ) : null}
-            <button type="button" className="button button-secondary" onClick={() => void loadSnapshot()}>
-              读取缓存
-            </button>
-            <button type="button" className="button" onClick={() => void handleRefreshSnapshot()} disabled={refreshing}>
-              {refreshing ? "刷新中..." : "刷新快照"}
-            </button>
-          </div>
-        }
-      >
+      <section className="section-block">
         {error ? <div className="banner banner-error">{error}</div> : null}
         {loading && !snapshot ? <div className="table-empty">首次生成快照中...</div> : null}
 
@@ -337,8 +258,17 @@ export function PortfolioPage() {
               <PortfolioKpiCard
                 label="净值"
                 value={formatCurrency(snapshot.account.net_liquidation, currency)}
-                sideLabel="当日盈亏"
-                sideValue="--"
+                headerAction={
+                  <AccountSummaryBadge
+                    accountId={snapshot.account.account_id}
+                    positionCount={totals.count}
+                    investedValue={totals.investedValue}
+                    currency={currency}
+                    source={snapshot.meta.broker_display_name}
+                    cacheStatus={formatSnapshotCacheStatus(snapshotResponse)}
+                    updatedAt={snapshot.account.updated_at}
+                  />
+                }
                 note={`${snapshot.meta.broker_display_name} / ${brokerStatusLabel(snapshot.meta.broker_status)}`}
               />
               <PortfolioKpiCard
@@ -407,7 +337,7 @@ export function PortfolioPage() {
             </article>
           </>
         ) : null}
-      </PageSection>
+      </section>
     </section>
   );
 }

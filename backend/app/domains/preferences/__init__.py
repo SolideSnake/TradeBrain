@@ -5,6 +5,8 @@ from app.domains.preferences.schemas import (
     IBKRSettingsUpdate,
     NotificationSettingsRead,
     NotificationSettingsUpdate,
+    SnapshotRefreshSettingsRead,
+    SnapshotRefreshSettingsUpdate,
 )
 
 __all__ = [
@@ -14,4 +16,6 @@ __all__ = [
     "IBKRSettingsUpdate",
     "NotificationSettingsRead",
     "NotificationSettingsUpdate",
+    "SnapshotRefreshSettingsRead",
+    "SnapshotRefreshSettingsUpdate",
 ]

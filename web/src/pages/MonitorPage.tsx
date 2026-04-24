@@ -1,54 +1,49 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import { useSnapshotResource } from "../hooks/useSnapshotResource";
 import {
-  AssetType,
-  CanonicalSnapshot,
-  CreateWatchlistEntryPayload,
-  Market,
-  SnapshotResponse,
-  ValuationLabel,
+  type CanonicalSnapshot,
+  type ScannerCandidate,
+  type ValuationLabel,
   createWatchlistEntry,
   deleteWatchlistEntry,
-  getSnapshot,
+  getScannerResult,
   refreshSnapshot,
 } from "../shared/api";
 import { formatCurrency, formatPercent } from "../shared/formatters";
-import { KeyValueList, PageSection, StatCard } from "../shared/ui";
 
-const columns = ["标的", "行情", "回撤", "估值状态", "变化", "持仓 / P&L", "标记", "操作"];
-const marketOptions: Market[] = ["US", "HK", "OTHER"];
-const assetTypeOptions: AssetType[] = ["stock", "etf", "bond", "other"];
-
-const defaultForm: CreateWatchlistEntryPayload = {
-  symbol: "",
-  name: "",
-  market: "US",
-  asset_type: "stock",
-  group_name: "core",
-  enabled: true,
-  in_position: false,
-  notes: "",
-};
+const columns = ["标的", "行情", "回撤", "估值状态", "变化", "操作"];
 
 export function MonitorPage() {
-  const [snapshot, setSnapshot] = useState<CanonicalSnapshot | null>(null);
-  const [snapshotResponse, setSnapshotResponse] = useState<SnapshotResponse | null>(null);
-  const [form, setForm] = useState<CreateWatchlistEntryPayload>(defaultForm);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { snapshot, loading, error, setError, applySnapshotResponse } = useSnapshotResource({
+    loadErrorMessage: "Failed to load monitor snapshot.",
+  });
+  const [symbolInput, setSymbolInput] = useState("");
+  const symbolInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [scannerCandidates, setScannerCandidates] = useState<ScannerCandidate[]>([]);
+  const [scannerLoading, setScannerLoading] = useState(true);
+  const [scannerError, setScannerError] = useState<string | null>(null);
 
   useEffect(() => {
-    void loadSnapshot();
-  }, []);
+    if (!toastMessage) {
+      return;
+    }
+
+    const timerId = window.setTimeout(() => setToastMessage(null), 2400);
+    return () => window.clearTimeout(timerId);
+  }, [toastMessage]);
+
+  useEffect(() => {
+    void loadScannerResult();
+  }, [snapshot?.meta.generated_at]);
 
   const summary = useMemo(
     () => ({
       total: snapshot?.summary.tracked_symbols ?? 0,
       enabled: snapshot?.summary.enabled_symbols ?? 0,
-      inPosition: snapshot?.summary.symbols_in_position ?? 0,
       changed: snapshot?.watchlist.filter((entry) => entry.state?.has_changed).length ?? 0,
       missingQuote:
         snapshot?.watchlist.filter((entry) => entry.enabled && entry.indicators?.current_price === null).length ?? 0,
@@ -64,64 +59,51 @@ export function MonitorPage() {
     return [...snapshot.watchlist].sort((left, right) => rowPriority(right) - rowPriority(left));
   }, [snapshot]);
 
-  async function loadSnapshot() {
-    setLoading(true);
-    try {
-      const data = await getSnapshot();
-      applySnapshotResponse(data);
-      setError(data.last_error || null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load monitor snapshot.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleRefreshSnapshot() {
-    setRefreshing(true);
     try {
       const data = await refreshSnapshot();
       applySnapshotResponse(data);
-      setError(data.last_error || null);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : "Failed to refresh monitor snapshot.");
+    }
+  }
+
+  async function loadScannerResult() {
+    setScannerLoading(true);
+    try {
+      const data = await getScannerResult();
+      setScannerCandidates(data.candidates);
+      setScannerError(null);
+    } catch (scanError) {
+      setScannerError(scanError instanceof Error ? scanError.message : "策略线索加载失败。");
     } finally {
-      setRefreshing(false);
+      setScannerLoading(false);
     }
-  }
-
-  function applySnapshotResponse(response: SnapshotResponse) {
-    setSnapshotResponse(response);
-    if (response.snapshot) {
-      setSnapshot(response.snapshot);
-    }
-  }
-
-  function handleInputChange(
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
-  ) {
-    const { name, value, type } = event.target;
-    const nextValue = type === "checkbox" ? (event.target as HTMLInputElement).checked : value;
-
-    setForm((current) => ({
-      ...current,
-      [name]:
-        typeof nextValue === "string" && name === "symbol" ? nextValue.toUpperCase() : nextValue,
-    }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const symbol = symbolInput.trim().toUpperCase();
+
+    if (!symbol) {
+      setAddError("请输入代码");
+      window.requestAnimationFrame(() => symbolInputRef.current?.focus());
+      return;
+    }
+
     setSubmitting(true);
+    setAddError(null);
 
     try {
-      await createWatchlistEntry(form);
-      setForm(defaultForm);
+      await createWatchlistEntry({ symbol });
+      setSymbolInput("");
       setError(null);
       await handleRefreshSnapshot();
-      setShowForm(false);
+      setToastMessage("已加入 Watchlist");
+      window.requestAnimationFrame(() => symbolInputRef.current?.focus());
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to add symbol.");
+      const detail = submitError instanceof Error ? submitError.message : "添加失败";
+      setAddError(detail.length > 32 ? "添加失败，请检查代码" : detail);
     } finally {
       setSubmitting(false);
     }
@@ -141,32 +123,6 @@ export function MonitorPage() {
     return value === null ? "--" : value.toFixed(2);
   }
 
-  function formatMarketLabel(value: Market) {
-    switch (value) {
-      case "US":
-        return "美股";
-      case "HK":
-        return "港股";
-      case "OTHER":
-      default:
-        return "其他";
-    }
-  }
-
-  function formatAssetTypeLabel(value: AssetType) {
-    switch (value) {
-      case "stock":
-        return "股票";
-      case "etf":
-        return "ETF";
-      case "bond":
-        return "债券";
-      case "other":
-      default:
-        return "其他";
-    }
-  }
-
   function formatValuationLabel(value: ValuationLabel | null) {
     switch (value) {
       case "undervalued":
@@ -178,22 +134,6 @@ export function MonitorPage() {
       default:
         return "--";
     }
-  }
-
-  function cacheStatusLabel(response: SnapshotResponse | null) {
-    if (!response) {
-      return "--";
-    }
-    if (response.cache_status === "failed") {
-      return "刷新失败，显示旧快照";
-    }
-    if (response.cache_status === "success") {
-      return response.from_cache ? "缓存快照" : "刚刚刷新";
-    }
-    if (response.cache_status === "empty") {
-      return "暂无快照";
-    }
-    return "刷新中";
   }
 
   function valuationClass(value: ValuationLabel | null) {
@@ -238,9 +178,6 @@ export function MonitorPage() {
     if (entry.enabled && entry.indicators?.current_price === null) {
       score += 4;
     }
-    if (entry.in_position) {
-      score += 3;
-    }
     if (!entry.enabled) {
       score -= 2;
     }
@@ -259,173 +196,99 @@ export function MonitorPage() {
   }
 
   return (
-    <section>
-      <header className="page-header">
-        <p>监控页优先服务日常扫描，不让录入表单抢主视觉，把最值得先处理的标的排在前面。</p>
-      </header>
+    <section className="monitor-page">
+      {toastMessage ? <div className="toast toast-success">{toastMessage}</div> : null}
 
-      <div className="panel-grid">
-        <StatCard label="监控总数" value={summary.total} note="全部 watchlist 标的" />
-        <StatCard label="已启用" value={summary.enabled} note="会进入下一轮监控" />
-        <StatCard
-          label="状态变化"
-          value={summary.changed}
-          note="今天先看这一批"
-          tone={summary.changed > 0 ? "warning" : "positive"}
-        />
-        <StatCard
-          label="缺失行情"
-          value={summary.missingQuote}
-          note="启用但暂未拿到价格"
-          tone={summary.missingQuote > 0 ? "warning" : "positive"}
-        />
+      <div className="monitor-summary-bar" aria-label="监控摘要">
+        <div className="monitor-summary-metrics">
+          <div className="monitor-summary-item">
+            <span>监控总数</span>
+            <strong>{summary.total}</strong>
+          </div>
+          <div className="monitor-summary-item">
+            <span>已启用</span>
+            <strong>{summary.enabled}</strong>
+          </div>
+          <div className="monitor-summary-item">
+            <span>状态变化</span>
+            <strong className={summary.changed > 0 ? "value-warning" : "value-positive"}>{summary.changed}</strong>
+          </div>
+          <div className="monitor-summary-item">
+            <span>缺失行情</span>
+            <strong className={summary.missingQuote > 0 ? "value-warning" : "value-positive"}>{summary.missingQuote}</strong>
+          </div>
+        </div>
+
+        <form className="monitor-inline-add" onSubmit={handleSubmit} noValidate>
+          <div className="monitor-inline-add-field">
+            <input
+              ref={symbolInputRef}
+              value={symbolInput}
+              onChange={(event) => {
+                setSymbolInput(event.target.value.toUpperCase());
+                setAddError(null);
+              }}
+              placeholder="输入代码，如 AAPL"
+              maxLength={32}
+              aria-label="新增标的代码"
+              aria-describedby={addError ? "monitor-add-error" : undefined}
+            />
+            {addError ? (
+              <span id="monitor-add-error" className="monitor-inline-error">
+                {addError}
+              </span>
+            ) : null}
+          </div>
+          <button type="submit" className="button button-toolbar" disabled={submitting}>
+            {submitting ? "添加中" : "添加"}
+          </button>
+        </form>
       </div>
 
-      <PageSection
-        title="监控列表"
-        description="默认按优先级排序：状态变化、缺失行情、持仓标的会排在前面。"
-        actions={
-          <div className="actions-row">
-            <button type="button" className="button button-secondary" onClick={() => void loadSnapshot()}>
-              读取缓存
-            </button>
-            <button type="button" className="button" onClick={() => void handleRefreshSnapshot()} disabled={refreshing}>
-              {refreshing ? "刷新中..." : "刷新快照"}
-            </button>
-            <button type="button" className="button" onClick={() => setShowForm((current) => !current)}>
-              {showForm ? "收起新增表单" : "新增标的"}
-            </button>
+      <section className="section-block">
+        <div className="table-header">
+          <div>
+            <h3>策略线索</h3>
           </div>
-        }
-      >
+          <button type="button" className="button button-secondary" onClick={() => void loadScannerResult()}>
+            重新扫描
+          </button>
+        </div>
+
+        <div className="scanner-strip">
+          {scannerLoading ? <div className="scanner-empty">正在扫描...</div> : null}
+          {!scannerLoading && scannerError ? <div className="banner banner-error">{scannerError}</div> : null}
+          {!scannerLoading && !scannerError && scannerCandidates.length === 0 ? (
+            <div className="scanner-empty">当前没有明显策略线索。</div>
+          ) : null}
+          {!scannerLoading &&
+            !scannerError &&
+            scannerCandidates.slice(0, 4).map((candidate) => (
+              <article key={candidate.symbol} className="scanner-card">
+                <div className="scanner-card-top">
+                  <div className="cell-stack">
+                    <span className="symbol-cell">{candidate.symbol}</span>
+                    <span className="muted">{candidate.name}</span>
+                  </div>
+                  <strong>{candidate.score.score.toFixed(0)}</strong>
+                </div>
+                <div className="scanner-reason">{scannerReasonText(candidate.reason)}</div>
+                <div className="scanner-breakdown">
+                  {candidate.score.breakdown.map((part) => (
+                    <span key={part.name}>
+                      {part.name} {part.score.toFixed(0)}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
+        </div>
+      </section>
+
+      <section className="section-block">
         {error ? <div className="banner banner-error">{error}</div> : null}
 
-        {snapshot ? (
-          <article className="panel overview-secondary">
-            <h3>当前关注点</h3>
-            <KeyValueList
-              items={[
-                { label: "状态变化", value: `${summary.changed} 个`, tone: summary.changed > 0 ? "warning" : "positive" },
-                { label: "持仓标的", value: `${summary.inPosition} 个` },
-                { label: "缺失行情", value: `${summary.missingQuote} 个`, tone: summary.missingQuote > 0 ? "warning" : "positive" },
-                { label: "缓存状态", value: cacheStatusLabel(snapshotResponse), tone: snapshotResponse?.cache_status === "failed" ? "warning" : "positive" },
-              ]}
-            />
-          </article>
-        ) : null}
-
-        {showForm ? (
-          <article className="panel overview-secondary">
-            <h3>新增 Watchlist 标的</h3>
-            <p className="panel-note">录入动作保留在本页，但默认收起，避免干扰扫描路径。</p>
-
-            <form className="form-grid form-grid-2" onSubmit={handleSubmit}>
-              <label>
-                <span>代码</span>
-                <input
-                  name="symbol"
-                  value={form.symbol}
-                  onChange={handleInputChange}
-                  placeholder="AAPL"
-                  maxLength={32}
-                  required
-                />
-              </label>
-
-              <label>
-                <span>名称</span>
-                <input
-                  name="name"
-                  value={form.name}
-                  onChange={handleInputChange}
-                  placeholder="Apple Inc."
-                  maxLength={128}
-                  required
-                />
-              </label>
-
-              <label>
-                <span>分组</span>
-                <input
-                  name="group_name"
-                  value={form.group_name}
-                  onChange={handleInputChange}
-                  placeholder="core"
-                  maxLength={64}
-                  required
-                />
-              </label>
-
-              <label>
-                <span>市场</span>
-                <select name="market" value={form.market} onChange={handleInputChange}>
-                  {marketOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {formatMarketLabel(option)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span>资产类型</span>
-                <select name="asset_type" value={form.asset_type} onChange={handleInputChange}>
-                  {assetTypeOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {formatAssetTypeLabel(option)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="form-span-2">
-                <span>备注</span>
-                <textarea
-                  name="notes"
-                  value={form.notes}
-                  onChange={handleInputChange}
-                  placeholder="记录为什么要继续跟踪这只标的。"
-                  rows={3}
-                />
-              </label>
-
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  name="enabled"
-                  checked={form.enabled}
-                  onChange={handleInputChange}
-                />
-                <span>纳入监控</span>
-              </label>
-
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  name="in_position"
-                  checked={form.in_position}
-                  onChange={handleInputChange}
-                />
-                <span>当前已持仓</span>
-              </label>
-
-              <div className="actions-row form-span-2">
-                <button type="submit" className="button" disabled={submitting}>
-                  {submitting ? "保存中..." : "加入 Watchlist"}
-                </button>
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  onClick={() => setForm(defaultForm)}
-                >
-                  重置
-                </button>
-              </div>
-            </form>
-          </article>
-        ) : null}
-
-        <article className="table-shell overview-secondary">
+        <article className="table-shell">
           <div className="table-row table-head table-monitor">
             {columns.map((column) => (
               <span key={column}>{column}</span>
@@ -444,11 +307,6 @@ export function MonitorPage() {
                 <div className="cell-stack">
                   <span className="symbol-cell">{entry.symbol}</span>
                   <span className="muted">{entry.name}</span>
-                  <div className="status-stack">
-                    <span className="table-chip">{formatMarketLabel(entry.market)}</span>
-                    <span className="table-chip">{formatAssetTypeLabel(entry.asset_type)}</span>
-                    <span className="table-chip">{entry.group_name}</span>
-                  </div>
                 </div>
 
                 <div className="cell-stack">
@@ -500,25 +358,6 @@ export function MonitorPage() {
                   </span>
                 </div>
 
-                <div className="cell-stack">
-                  <span>{entry.position ? `${entry.position.quantity} 股` : "--"}</span>
-                  <span className={`value-${indicatorTone(entry.indicators?.unrealized_pnl_percent ?? null)}`}>
-                    {formatPercent(entry.indicators?.unrealized_pnl_percent ?? null)}
-                  </span>
-                </div>
-
-                <div className="status-stack">
-                  <span className={entry.enabled ? "status-pill status-pill-ok" : "status-pill"}>
-                    {entry.enabled ? "启用" : "暂停"}
-                  </span>
-                  <span className={entry.in_position ? "status-pill status-pill-warn" : "status-pill"}>
-                    {entry.in_position ? "已持仓" : "观察中"}
-                  </span>
-                  {entry.enabled && entry.indicators?.current_price === null ? (
-                    <span className="status-pill status-pill-danger">无行情</span>
-                  ) : null}
-                </div>
-
                 <div className="table-actions">
                   <button
                     type="button"
@@ -531,7 +370,20 @@ export function MonitorPage() {
               </div>
             ))}
         </article>
-      </PageSection>
+      </section>
     </section>
   );
+}
+
+function scannerReasonText(reason: ScannerCandidate["reason"]) {
+  switch (reason) {
+    case "large_drop":
+      return "大跌幅";
+    case "undervalued":
+      return "低估";
+    case "pullback_52w":
+      return "52W 回撤";
+    default:
+      return reason;
+  }
 }

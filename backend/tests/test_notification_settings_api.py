@@ -45,16 +45,12 @@ def test_notification_settings_test_message_skips_when_missing_config(client):
     assert payload["delivery_status"] == "skipped"
 
 
-def test_notification_settings_test_message_succeeds_and_logs_alert(client, monkeypatch):
+def test_notification_settings_test_message_succeeds_and_logs_alert(client):
     class FakeNotifier:
         def send_message(self, text: str):
             return type("Result", (), {"status": "sent", "external_id": "1"})()
 
-    monkeypatch.setattr(
-        router_module.notification_settings_service,
-        "notifier_factory",
-        lambda bot_token, chat_id: FakeNotifier(),
-    )
+    router_module.notification_service.notifier = FakeNotifier()
 
     save_response = client.put(
         "/api/settings/notifications",
@@ -77,3 +73,4 @@ def test_notification_settings_test_message_succeeds_and_logs_alert(client, monk
     alerts_payload = alerts_response.json()
     assert alerts_payload[0]["symbol"] == "SYSTEM"
     assert alerts_payload[0]["title"] == "Telegram 测试消息"
+    router_module.notification_service.notifier = None

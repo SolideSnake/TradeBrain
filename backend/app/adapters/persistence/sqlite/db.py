@@ -41,6 +41,7 @@ def get_db():
 
 
 def init_db() -> None:
+    import app.domains.alerting.models  # noqa: F401
     import app.domains.alerts.models  # noqa: F401
     import app.domains.preferences.models  # noqa: F401
     import app.domains.snapshot.models  # noqa: F401
@@ -51,4 +52,28 @@ def init_db() -> None:
     with engine.begin() as connection:
         connection.exec_driver_sql("PRAGMA journal_mode=WAL;")
     Base.metadata.create_all(bind=engine)
+    _migrate_alert_rules(engine)
+
+
+def _migrate_alert_rules(engine) -> None:
+    columns = {
+        "schema_version": "INTEGER NOT NULL DEFAULT 1",
+        "category": "VARCHAR(32) NOT NULL DEFAULT 'threshold'",
+        "cooldown_seconds": "INTEGER NOT NULL DEFAULT 3600",
+        "edge_only": "BOOLEAN NOT NULL DEFAULT 1",
+        "message_template": "TEXT NOT NULL DEFAULT ''",
+        "last_observed_value": "VARCHAR(128) NOT NULL DEFAULT ''",
+        "last_evaluated_at": "DATETIME",
+        "last_matched": "BOOLEAN NOT NULL DEFAULT 0",
+        "last_suppressed_at": "DATETIME",
+        "suppressed_count": "INTEGER NOT NULL DEFAULT 0",
+    }
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(alert_rules)").fetchall()
+        }
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.exec_driver_sql(f"ALTER TABLE alert_rules ADD COLUMN {name} {definition}")
 

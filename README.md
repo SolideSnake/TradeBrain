@@ -2,9 +2,9 @@
 
 TradeBrain 是一个本地优先的辅助交易工作台，用来监控自选标的、读取 IBKR 账户数据、计算一小组高信号指标、基于 PEG 打估值标签，并在状态变化时发送 Telegram 预警。
 
-第一版 MVP 已于 `2026-04-17` 完成，当前仓库已进入 `MVP v1 完成后的稳定化与下一阶段规划`。
+第一版 MVP 已于 `2026-04-17` 完成，当前仓库已进入 `MVP v1 完成后的稳定化与下一阶段规划`。截至 `2026-04-24`，项目已经补齐快照缓存、提醒规则 v1、IBKR 真实/模拟 profile 切换、策略线索扫描和追踪页策略线索展示。
 
-当前 MVP 聚焦这 7 件事：
+当前已落地的核心能力：
 
 - Watchlist 管理
 - IBKR 只读接入
@@ -14,6 +14,8 @@ TradeBrain 是一个本地优先的辅助交易工作台，用来监控自选标
 - 状态变化检测
 - Telegram 预警
 - Web 看板
+- 可配置提醒规则
+- 策略线索扫描
 
 ## 技术栈
 
@@ -33,6 +35,12 @@ TradeBrain/
   install.cmd     给双击或 cmd 用的包装脚本
   .env.example    本地环境变量模板
 ```
+
+说明：
+
+- 真正后端源码在 [backend/app](D:\code\TradeBrain\backend\app)。
+- [backend/backend](D:\code\TradeBrain\backend\backend) 当前是空目录，没有业务代码。
+- `backend/tradebrain.db`、`backend/tradebrain.db-shm`、`backend/tradebrain.db-wal` 是本地运行数据文件，不是源码。
 
 ## 运行前准备
 
@@ -179,7 +187,7 @@ IBKR_PAPER_PORT=7497
 IBKR_PAPER_CLIENT_ID=2
 IBKR_PAPER_ACCOUNT_ID=
 IBKR_MARKET_DATA_TYPE=delayed
-IBKR_MARKET_DATA_WAIT_SECONDS=1.0
+IBKR_MARKET_DATA_WAIT_SECONDS=8.0
 
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
@@ -196,10 +204,10 @@ TELEGRAM_CHAT_ID=
 ## 当前页面
 
 - `Overview`：券商连接状态和快照摘要
-- `Monitor`：watchlist、行情指标、PEG、估值标签、状态变化
-- `Alerts`：预警历史和 Telegram 发送记录
+- `Monitor`：watchlist、行情指标、PEG、估值标签、状态变化、策略线索
+- `Alerts`：提醒规则管理、发送成功/失败/抑制统计
 - `Portfolio`：账户余额、持仓、浮盈亏
-- `Settings`：IBKR 真实/模拟 TWS 配置、Telegram 配置与测试发送
+- `Settings`：IBKR 真实/模拟 TWS 配置、快照自动刷新、Telegram 配置与测试发送
 
 ## 当前后端 API
 
@@ -211,13 +219,29 @@ TELEGRAM_CHAT_ID=
 - `GET /api/snapshot`：读取最近一次成功快照；没有缓存时会首次生成
 - `POST /api/snapshot/refresh`：手动刷新快照，失败时保留旧快照
 - `GET /api/states`
+- `GET /api/scanner`
 - `GET /api/alerts`
+- `GET /api/alert-rules`
+- `POST /api/alert-rules`
+- `PATCH /api/alert-rules/{rule_id}`
+- `DELETE /api/alert-rules/{rule_id}`
+- `GET /api/alert-rules/metadata`
+- `POST /api/alert-rules/reset-counters`
 - `GET /api/settings/notifications`
 - `PUT /api/settings/notifications`
 - `POST /api/settings/notifications/test`
 - `GET /api/settings/ibkr`
 - `PUT /api/settings/ibkr`
 - `POST /api/settings/ibkr/test`
+- `GET /api/settings/snapshot-refresh`
+- `PUT /api/settings/snapshot-refresh`
+
+## 快照刷新
+
+- 默认开启后端自动刷新，每 `5 分钟` 刷新一次完整快照。
+- `Settings` 页面可以关闭自动刷新，或设置为 `5 / 15 / 30 / 60 分钟`。
+- 自动刷新由后端后台任务执行；浏览器关闭后，只要后端还在运行，就会继续刷新。
+- 页面仍然优先读取最近一次成功快照，刷新失败不会清空旧数据。
 
 ## 怎么验收 MVP
 
@@ -268,6 +292,7 @@ npm run build
 - 当前状态引擎是 PEG 驱动的轻量版。
 - 正确数据库位置应为 [tradebrain.db](D:\code\TradeBrain\backend\tradebrain.db)。
 - 不要把 Telegram Bot Token 发到聊天记录里，也不要提交进仓库。
+- 换电脑如果不迁移本地数据库，项目仍可运行，但 watchlist、提醒规则、IBKR/Telegram 页面配置需要重新填写。
 
 ## 相关文档
 

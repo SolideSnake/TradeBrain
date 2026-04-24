@@ -4,11 +4,35 @@ export type ValuationLabel = "undervalued" | "fair" | "overvalued";
 export type AlertChannel = "telegram";
 export type AlertLevel = "info" | "warning" | "critical";
 export type AlertDeliveryStatus = "sent" | "skipped" | "failed";
+export type AlertRuleSource = "watchlist" | "portfolio" | "custom";
+export type AlertRuleCategory = "threshold" | "event" | "schedule" | "composite";
+export type AlertRuleMetric =
+  | "current_price"
+  | "day_change_percent"
+  | "drawdown_52w"
+  | "drawdown_90d"
+  | "valuation_label"
+  | "net_liquidation"
+  | "available_funds"
+  | "buying_power"
+  | "custom_value";
+export type AlertRuleOperator =
+  | "above"
+  | "below"
+  | "equals"
+  | "becomes"
+  | "gte"
+  | "lte"
+  | "not_equals"
+  | "cross_above"
+  | "cross_below"
+  | "change_to";
 export type NotificationSettingsSource = "database" | "environment" | "none";
 export type IBKRMode = "mock" | "ibkr";
 export type IBKRProfileName = "real" | "paper";
 export type IBKRSettingsSource = "database" | "environment";
 export type SnapshotCacheStatus = "empty" | "idle" | "refreshing" | "success" | "failed";
+export type ScannerCandidateReason = "large_drop" | "pullback_52w" | "undervalued";
 
 export interface WatchlistEntry {
   id: number;
@@ -26,13 +50,13 @@ export interface WatchlistEntry {
 
 export interface CreateWatchlistEntryPayload {
   symbol: string;
-  name: string;
-  market: Market;
-  asset_type: AssetType;
-  group_name: string;
-  enabled: boolean;
-  in_position: boolean;
-  notes: string;
+  name?: string;
+  market?: Market;
+  asset_type?: AssetType;
+  group_name?: string;
+  enabled?: boolean;
+  in_position?: boolean;
+  notes?: string;
 }
 
 export interface QuoteSnapshot {
@@ -131,6 +155,95 @@ export interface NotificationTestResult {
   detail: string;
 }
 
+export interface AlertRule {
+  id: number;
+  schema_version: number;
+  name: string;
+  enabled: boolean;
+  category: AlertRuleCategory;
+  source: AlertRuleSource;
+  symbol: string;
+  metric: AlertRuleMetric;
+  operator: AlertRuleOperator;
+  threshold_value: string;
+  cooldown_seconds: number;
+  edge_only: boolean;
+  message_template: string;
+  last_observed_value: string;
+  last_evaluated_at: string | null;
+  last_matched: boolean;
+  last_suppressed_at: string | null;
+  suppressed_count: number;
+  sent_count: number;
+  failed_count: number;
+  last_triggered_at: string | null;
+  last_sent_at: string | null;
+  last_failed_at: string | null;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAlertRulePayload {
+  name: string;
+  enabled?: boolean;
+  category?: AlertRuleCategory;
+  source: AlertRuleSource;
+  symbol?: string;
+  metric: AlertRuleMetric;
+  operator: AlertRuleOperator;
+  threshold_value: string;
+  cooldown_seconds?: number;
+  edge_only?: boolean;
+  message_template?: string;
+}
+
+export interface UpdateAlertRulePayload {
+  name?: string;
+  enabled?: boolean;
+  category?: AlertRuleCategory;
+  source?: AlertRuleSource;
+  symbol?: string;
+  metric?: AlertRuleMetric;
+  operator?: AlertRuleOperator;
+  threshold_value?: string;
+  cooldown_seconds?: number;
+  edge_only?: boolean;
+  message_template?: string;
+}
+
+export interface AlertRuleOption {
+  value: string;
+  label: string;
+}
+
+export interface AlertRuleMetricOption extends AlertRuleOption {
+  source: AlertRuleSource;
+  value_type: "number" | "text" | string;
+  default_operator: AlertRuleOperator;
+  default_threshold: string;
+  unit: string;
+}
+
+export interface AlertRuleTemplate {
+  id: string;
+  label: string;
+  description: string;
+  source: AlertRuleSource;
+  metric: AlertRuleMetric;
+  operator: AlertRuleOperator;
+  threshold_value: string;
+  cooldown_seconds: number;
+  edge_only: boolean;
+}
+
+export interface AlertRuleMetadata {
+  sources: AlertRuleOption[];
+  operators: AlertRuleOption[];
+  metrics: AlertRuleMetricOption[];
+  templates: AlertRuleTemplate[];
+}
+
 export interface IBKRConnectionProfile {
   host: string;
   port: number;
@@ -220,6 +333,48 @@ export interface SnapshotResponse {
   last_error: string;
 }
 
+export interface SnapshotRefreshSettings {
+  enabled: boolean;
+  interval_seconds: number;
+}
+
+export interface UpdateSnapshotRefreshSettingsPayload {
+  enabled?: boolean;
+  interval_seconds?: number;
+}
+
+export interface ScoreBreakdown {
+  name: string;
+  score: number;
+  reason: string;
+}
+
+export interface ScoreResult {
+  symbol: string;
+  score: number;
+  breakdown: ScoreBreakdown[];
+}
+
+export interface StrategyEvaluation {
+  rule_id: string;
+  rule_name: string;
+  matched: boolean;
+  reasons: string[];
+}
+
+export interface ScannerCandidate {
+  symbol: string;
+  name: string;
+  reason: ScannerCandidateReason;
+  score: ScoreResult;
+  strategy: StrategyEvaluation;
+}
+
+export interface ScannerResult {
+  generated_at: string;
+  candidates: ScannerCandidate[];
+}
+
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     headers: {
@@ -255,8 +410,46 @@ export function refreshSnapshot(): Promise<SnapshotResponse> {
   });
 }
 
+export function getScannerResult(): Promise<ScannerResult> {
+  return request<ScannerResult>("/api/scanner");
+}
+
 export function listAlerts(): Promise<AlertEvent[]> {
   return request<AlertEvent[]>("/api/alerts");
+}
+
+export function listAlertRules(): Promise<AlertRule[]> {
+  return request<AlertRule[]>("/api/alert-rules");
+}
+
+export function getAlertRuleMetadata(): Promise<AlertRuleMetadata> {
+  return request<AlertRuleMetadata>("/api/alert-rules/metadata");
+}
+
+export function createAlertRule(payload: CreateAlertRulePayload): Promise<AlertRule> {
+  return request<AlertRule>("/api/alert-rules", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAlertRule(ruleId: number, payload: UpdateAlertRulePayload): Promise<AlertRule> {
+  return request<AlertRule>(`/api/alert-rules/${ruleId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAlertRule(ruleId: number): Promise<void> {
+  return request<void>(`/api/alert-rules/${ruleId}`, {
+    method: "DELETE",
+  });
+}
+
+export function resetAlertRuleCounters(): Promise<AlertRule[]> {
+  return request<AlertRule[]>("/api/alert-rules/reset-counters", {
+    method: "POST",
+  });
 }
 
 export function getNotificationSettings(): Promise<NotificationSettings> {
@@ -293,6 +486,19 @@ export function testIBKRConnection(profile: IBKRProfileName): Promise<IBKRConnec
   return request<IBKRConnectionTestResult>("/api/settings/ibkr/test", {
     method: "POST",
     body: JSON.stringify({ profile }),
+  });
+}
+
+export function getSnapshotRefreshSettings(): Promise<SnapshotRefreshSettings> {
+  return request<SnapshotRefreshSettings>("/api/settings/snapshot-refresh");
+}
+
+export function updateSnapshotRefreshSettings(
+  payload: UpdateSnapshotRefreshSettingsPayload,
+): Promise<SnapshotRefreshSettings> {
+  return request<SnapshotRefreshSettings>("/api/settings/snapshot-refresh", {
+    method: "PUT",
+    body: JSON.stringify(payload),
   });
 }
 

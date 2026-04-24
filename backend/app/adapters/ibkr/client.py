@@ -413,10 +413,10 @@ class LiveIBKRClient(IBKRClient):
     ) -> tuple[dict[str, QuoteSnapshot], dict[str, dict[str, float]]]:
         tickers = []
         for symbol, contract in sorted(contracts_by_symbol.items()):
-            ticker = ib.reqMktData(contract, "258", False, False)
+            ticker = ib.reqMktData(contract, "", False, False)
             tickers.append((symbol, ticker))
 
-        ib.sleep(self.settings.ibkr_market_data_wait_seconds)
+        self._wait_for_market_data(ib, [ticker for _, ticker in tickers])
 
         quotes: dict[str, QuoteSnapshot] = {}
         ratio_payloads: dict[str, dict[str, float]] = {}
@@ -432,8 +432,8 @@ class LiveIBKRClient(IBKRClient):
                 last_price=last_price,
                 previous_close=previous_close,
                 change_percent=change_percent,
-                bid=self._to_float(getattr(ticker, "bid", None)),
-                ask=self._to_float(getattr(ticker, "ask", None)),
+                bid=self._to_positive_price(getattr(ticker, "bid", None)),
+                ask=self._to_positive_price(getattr(ticker, "ask", None)),
                 as_of=now,
                 source="live",
             )
@@ -442,6 +442,26 @@ class LiveIBKRClient(IBKRClient):
                 getattr(ticker, "fundamentalRatios", None)
             )
         return quotes, ratio_payloads
+
+    def _wait_for_market_data(self, ib, tickers: Sequence[object]) -> None:
+        if not tickers:
+            return
+
+        wait_seconds = max(self.settings.ibkr_market_data_wait_seconds, 1.0)
+        interval_seconds = 0.25
+        elapsed_seconds = 0.0
+
+        while elapsed_seconds < wait_seconds:
+            if all(self._ticker_has_price(ticker) for ticker in tickers):
+                return
+            sleep_seconds = min(interval_seconds, wait_seconds - elapsed_seconds)
+            ib.sleep(sleep_seconds)
+            elapsed_seconds += sleep_seconds
+
+    def _ticker_has_price(self, ticker) -> bool:
+        if self._resolve_last_price(ticker) is not None:
+            return True
+        return self._to_positive_price(getattr(ticker, "previousClose", None)) is not None
 
     def _build_reference_levels(
         self,
@@ -634,19 +654,25 @@ class LiveIBKRClient(IBKRClient):
         return None
 
     def _resolve_last_price(self, ticker) -> float | None:
-        last = self._to_float(getattr(ticker, "last", None))
+        last = self._to_positive_price(getattr(ticker, "last", None))
         if last is not None:
             return last
 
-        close = self._to_float(getattr(ticker, "close", None))
+        close = self._to_positive_price(getattr(ticker, "close", None))
         if close is not None:
             return close
 
-        bid = self._to_float(getattr(ticker, "bid", None))
-        ask = self._to_float(getattr(ticker, "ask", None))
+        bid = self._to_positive_price(getattr(ticker, "bid", None))
+        ask = self._to_positive_price(getattr(ticker, "ask", None))
         if bid is not None and ask is not None:
             return round((bid + ask) / 2, 2)
         return None
+
+    def _to_positive_price(self, value: object) -> float | None:
+        numeric = self._to_float(value)
+        if numeric is None or numeric <= 0:
+            return None
+        return numeric
 
     def _normalize_key(self, value: str) -> str:
         return "".join(character for character in value.lower() if character.isalnum())

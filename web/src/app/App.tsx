@@ -1,10 +1,13 @@
-import { NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { NavLink, Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 import { AlertsPage } from "../pages/AlertsPage";
 import { MonitorPage } from "../pages/MonitorPage";
 import { OverviewPage } from "../pages/OverviewPage";
 import { PortfolioPage } from "../pages/PortfolioPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { refreshSnapshot } from "../shared/api";
+import { dispatchSnapshotRefreshed } from "../shared/snapshotEvents";
 
 const navItems = [
   { to: "/", label: "仪表盘" },
@@ -15,8 +18,42 @@ const navItems = [
 ];
 
 export function App() {
-  const location = useLocation();
-  const activeNav = navItems.find((item) => item.to === location.pathname) ?? navItems[0];
+  const [refreshStatus, setRefreshStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [refreshMessage, setRefreshMessage] = useState("");
+
+  useEffect(() => {
+    if (refreshStatus !== "success" && refreshStatus !== "error") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setRefreshStatus("idle");
+      setRefreshMessage("");
+    }, 3000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [refreshStatus]);
+
+  async function handleManualRefresh() {
+    setRefreshStatus("loading");
+    setRefreshMessage("");
+
+    try {
+      const response = await refreshSnapshot();
+      dispatchSnapshotRefreshed(response);
+
+      if (response.last_error) {
+        setRefreshStatus("error");
+        setRefreshMessage("获取失败，已保留旧数据");
+      } else {
+        setRefreshStatus("success");
+        setRefreshMessage("已更新");
+      }
+    } catch (error) {
+      setRefreshStatus("error");
+      setRefreshMessage(error instanceof Error ? error.message : "获取失败");
+    }
+  }
 
   return (
     <div className="shell">
@@ -37,16 +74,25 @@ export function App() {
             </NavLink>
           ))}
         </nav>
+
+        <div className="sidebar-refresh">
+          <button
+            type="button"
+            className="sidebar-refresh-button"
+            onClick={() => void handleManualRefresh()}
+            disabled={refreshStatus === "loading"}
+          >
+            {refreshStatus === "loading" ? "获取中..." : "手动获取数据"}
+          </button>
+          {refreshMessage ? (
+            <p className={`sidebar-refresh-message sidebar-refresh-message-${refreshStatus}`}>
+              {refreshMessage}
+            </p>
+          ) : null}
+        </div>
       </aside>
 
       <main className="content">
-        <div className="content-topbar">
-          <div>
-            <h2>{activeNav.label}</h2>
-          </div>
-          <div className="topbar-chip">TradeBrain 本地工作台</div>
-        </div>
-
         <Routes>
           <Route path="/" element={<OverviewPage />} />
           <Route path="/monitor" element={<MonitorPage />} />
