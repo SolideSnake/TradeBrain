@@ -35,7 +35,9 @@ class IndicatorService:
                     )
 
         high_52w = reference_levels.high_52w if reference_levels else None
+        low_52w = reference_levels.low_52w if reference_levels else None
         high_90d = reference_levels.high_90d if reference_levels else None
+        low_90d = reference_levels.low_90d if reference_levels else None
 
         return IndicatorSnapshot(
             current_price=current_price,
@@ -46,9 +48,13 @@ class IndicatorService:
             unrealized_pnl=unrealized_pnl,
             unrealized_pnl_percent=unrealized_pnl_percent,
             high_52w=high_52w,
+            low_52w=low_52w,
             drawdown_from_52w_high_percent=self._calculate_drawdown(current_price, high_52w),
+            gain_from_52w_low_percent=self._calculate_gain_from_low(current_price, low_52w),
             high_90d=high_90d,
+            low_90d=low_90d,
             drawdown_from_90d_high_percent=self._calculate_drawdown(current_price, high_90d),
+            gain_from_90d_low_percent=self._calculate_gain_from_low(current_price, low_90d),
             pe_ratio=fundamentals.pe_ratio if fundamentals else None,
             earnings_growth_rate_percent=(
                 fundamentals.earnings_growth_rate_percent if fundamentals else None
@@ -108,3 +114,12 @@ class IndicatorService:
         if current_price is None or reference_high in (None, 0):
             return None
         return round(((reference_high - current_price) / reference_high) * 100, 2)
+
+    def _calculate_gain_from_low(
+        self,
+        current_price: float | None,
+        reference_low: float | None,
+    ) -> float | None:
+        if current_price is None or reference_low in (None, 0):
+            return None
+        return round(((current_price - reference_low) / reference_low) * 100, 2)

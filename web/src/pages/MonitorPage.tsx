@@ -4,6 +4,7 @@ import { useSnapshotResource } from "../hooks/useSnapshotResource";
 import {
   type CanonicalSnapshot,
   type ScannerCandidate,
+  type SnapshotWatchlistItem,
   type ValuationLabel,
   createWatchlistEntry,
   deleteWatchlistEntry,
@@ -12,7 +13,7 @@ import {
 } from "../shared/api";
 import { formatCurrency, formatPercent } from "../shared/formatters";
 
-const columns = ["标的", "行情", "回撤", "估值状态", "变化", "操作"];
+const columns = ["标的", "行情", "区间位置", "估值状态", "变化", "操作"];
 
 export function MonitorPage() {
   const { snapshot, loading, error, setError, applySnapshotResponse } = useSnapshotResource({
@@ -316,24 +317,7 @@ export function MonitorPage() {
                   </span>
                 </div>
 
-                <div className="cell-stack">
-                  <span
-                    className={`value-${indicatorTone(
-                      entry.indicators?.drawdown_from_52w_high_percent ?? null,
-                      true,
-                    )}`}
-                  >
-                    52W {formatPercent(entry.indicators?.drawdown_from_52w_high_percent ?? null)}
-                  </span>
-                  <span
-                    className={`value-${indicatorTone(
-                      entry.indicators?.drawdown_from_90d_high_percent ?? null,
-                      true,
-                    )}`}
-                  >
-                    90D {formatPercent(entry.indicators?.drawdown_from_90d_high_percent ?? null)}
-                  </span>
-                </div>
+                <RangePositionCell entry={entry} />
 
                 <div className="cell-stack">
                   <span>
@@ -373,6 +357,98 @@ export function MonitorPage() {
       </section>
     </section>
   );
+}
+
+function RangePositionCell({ entry }: { entry: SnapshotWatchlistItem }) {
+  const indicators = entry.indicators;
+
+  return (
+    <div className="range-position-cell">
+      <RangePositionGroup
+        period="52W"
+        currentPrice={indicators?.current_price ?? null}
+        high={indicators?.high_52w ?? null}
+        low={indicators?.low_52w ?? null}
+        highDistancePercent={indicators?.drawdown_from_52w_high_percent ?? null}
+        lowDistancePercent={indicators?.gain_from_52w_low_percent ?? null}
+      />
+      <RangePositionGroup
+        period="90D"
+        currentPrice={indicators?.current_price ?? null}
+        high={indicators?.high_90d ?? null}
+        low={indicators?.low_90d ?? null}
+        highDistancePercent={indicators?.drawdown_from_90d_high_percent ?? null}
+        lowDistancePercent={indicators?.gain_from_90d_low_percent ?? null}
+      />
+    </div>
+  );
+}
+
+function RangePositionGroup({
+  period,
+  currentPrice,
+  high,
+  low,
+  highDistancePercent,
+  lowDistancePercent,
+}: {
+  period: string;
+  currentPrice: number | null;
+  high: number | null;
+  low: number | null;
+  highDistancePercent: number | null;
+  lowDistancePercent: number | null;
+}) {
+  const progress = rangePositionPercent(currentPrice, low, high);
+
+  return (
+    <div className="range-position-group">
+      <div className="range-position-topline">
+        <span className="range-period">{period}</span>
+        <div className="range-chip-row">
+          <span className="range-chip range-chip-high">
+            <span>High</span>
+            <strong>{formatHighDistance(highDistancePercent)}</strong>
+          </span>
+          <span className="range-chip range-chip-low">
+            <span>Low</span>
+            <strong>{formatSignedPercent(lowDistancePercent)}</strong>
+          </span>
+        </div>
+      </div>
+      {progress !== null ? (
+        <div className="range-progress" aria-label={`${period} 区间位置 ${progress.toFixed(0)}%`}>
+          <span style={{ width: `${progress}%` }} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatHighDistance(value: number | null) {
+  if (value === null) {
+    return "--";
+  }
+  return formatSignedPercent(value > 0 ? -value : Math.abs(value));
+}
+
+function formatSignedPercent(value: number | null) {
+  if (value === null) {
+    return "--";
+  }
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${value.toFixed(2)}%`;
+}
+
+function rangePositionPercent(
+  currentPrice: number | null,
+  low: number | null,
+  high: number | null,
+) {
+  if (currentPrice === null || low === null || high === null || high <= low) {
+    return null;
+  }
+  return Math.min(Math.max(((currentPrice - low) / (high - low)) * 100, 0), 100);
 }
 
 function scannerReasonText(reason: ScannerCandidate["reason"]) {

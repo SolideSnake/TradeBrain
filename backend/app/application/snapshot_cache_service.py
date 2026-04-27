@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from threading import Lock
+
 from sqlalchemy.orm import Session
 
 from app.adapters.persistence.sqlite.snapshot_repository import SnapshotRepository
@@ -7,6 +9,9 @@ from app.application.snapshot_builder import SnapshotBuilder
 from app.application.snapshot_pipeline_service import SnapshotPipelineService
 from app.domains.snapshot.models import SnapshotCacheRecord
 from app.domains.snapshot.schemas import CanonicalSnapshot, SnapshotResponse
+
+
+_REFRESH_LOCK = Lock()
 
 
 class SnapshotCacheService:
@@ -27,21 +32,33 @@ class SnapshotCacheService:
         return self.refresh(db)
 
     def refresh(self, db: Session) -> SnapshotResponse:
-        self.repository.mark_refreshing(db)
-        db.commit()
+        if not _REFRESH_LOCK.acquire(blocking=False):
+            return self._build_refreshing_response(db)
 
         try:
-            snapshot = self._snapshot_pipeline.build_snapshot(db)
-        except Exception as exc:
-            record = self.repository.save_failure(db, str(exc))
+            self.repository.mark_refreshing(db)
+            db.commit()
+
+            try:
+                snapshot = self._snapshot_pipeline.build_snapshot(db)
+            except Exception as exc:
+                record = self.repository.save_failure(db, str(exc))
+                db.commit()
+                db.refresh(record)
+                return self._build_response(record, from_cache=bool(record.snapshot_json))
+
+            record = self.repository.save_success(db, snapshot)
             db.commit()
             db.refresh(record)
-            return self._build_response(record, from_cache=bool(record.snapshot_json))
+            return self._build_response(record, from_cache=False)
+        finally:
+            _REFRESH_LOCK.release()
 
-        record = self.repository.save_success(db, snapshot)
+    def _build_refreshing_response(self, db: Session) -> SnapshotResponse:
+        record = self.repository.mark_refreshing(db)
         db.commit()
         db.refresh(record)
-        return self._build_response(record, from_cache=False)
+        return self._build_response(record, from_cache=bool(record.snapshot_json))
 
     def _build_response(
         self,

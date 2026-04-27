@@ -1,4 +1,5 @@
 from app.api import router as router_module
+from app.application import snapshot_cache_service as snapshot_cache_module
 
 
 def test_snapshot_endpoint_returns_mock_snapshot(client):
@@ -140,6 +141,36 @@ def test_snapshot_refresh_failure_keeps_previous_snapshot(client, monkeypatch):
     assert payload["from_cache"] is True
     assert payload["snapshot"]["summary"]["tracked_symbols"] == 1
     assert "IBKR timeout" in payload["last_error"]
+
+
+def test_snapshot_refresh_returns_cached_payload_when_refresh_already_running(client):
+    client.post(
+        "/api/watchlist",
+        json={
+            "symbol": "AAPL",
+            "name": "Apple Inc.",
+            "market": "US",
+            "asset_type": "stock",
+            "group_name": "core",
+            "enabled": True,
+            "in_position": False,
+            "notes": "",
+        },
+    )
+    assert client.get("/api/snapshot").status_code == 200
+
+    acquired = snapshot_cache_module._REFRESH_LOCK.acquire(blocking=False)
+    assert acquired is True
+    try:
+        response = client.post("/api/snapshot/refresh")
+    finally:
+        snapshot_cache_module._REFRESH_LOCK.release()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cache_status"] == "refreshing"
+    assert payload["from_cache"] is True
+    assert payload["snapshot"]["summary"]["tracked_symbols"] == 1
 
 
 def test_snapshot_first_build_failure_returns_empty_payload(client, monkeypatch):

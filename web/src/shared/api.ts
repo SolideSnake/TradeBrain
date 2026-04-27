@@ -84,7 +84,9 @@ export interface PositionSnapshot {
 
 export interface PriceReferenceLevels {
   high_52w: number | null;
+  low_52w: number | null;
   high_90d: number | null;
+  low_90d: number | null;
   source: string;
   as_of: string | null;
 }
@@ -98,9 +100,13 @@ export interface IndicatorSnapshot {
   unrealized_pnl: number | null;
   unrealized_pnl_percent: number | null;
   high_52w: number | null;
+  low_52w: number | null;
   drawdown_from_52w_high_percent: number | null;
+  gain_from_52w_low_percent: number | null;
   high_90d: number | null;
+  low_90d: number | null;
   drawdown_from_90d_high_percent: number | null;
+  gain_from_90d_low_percent: number | null;
   pe_ratio: number | null;
   earnings_growth_rate_percent: number | null;
   peg_ratio: number | null;
@@ -375,25 +381,47 @@ export interface ScannerResult {
   candidates: ScannerCandidate[];
 }
 
-async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
+interface RequestOptions extends RequestInit {
+  timeoutMs?: number;
+}
 
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(payload?.detail ?? `Request failed with status ${response.status}`);
+async function request<T>(input: RequestInfo, init?: RequestOptions): Promise<T> {
+  const { timeoutMs, signal, ...requestInit } = init ?? {};
+  const controller = timeoutMs ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
+  try {
+    const response = await fetch(input, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(requestInit.headers ?? {}),
+      },
+      ...requestInit,
+      signal: signal ?? controller?.signal,
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+      throw new Error(payload?.detail ?? `Request failed with status ${response.status}`);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("刷新等待超时，旧数据已保留。请确认 TWS 已完全启动后再试。");
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
   }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
 }
 
 export function listWatchlist(): Promise<WatchlistEntry[]> {
@@ -407,6 +435,7 @@ export function getSnapshot(): Promise<SnapshotResponse> {
 export function refreshSnapshot(): Promise<SnapshotResponse> {
   return request<SnapshotResponse>("/api/snapshot/refresh", {
     method: "POST",
+    timeoutMs: 30000,
   });
 }
 

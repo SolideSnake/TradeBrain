@@ -2,7 +2,7 @@
 
 TradeBrain 是一个本地优先的辅助交易工作台，用来监控自选标的、读取 IBKR 账户数据、计算一小组高信号指标、基于 PEG 打估值标签，并在状态变化时发送 Telegram 预警。
 
-第一版 MVP 已于 `2026-04-17` 完成，当前仓库已进入 `MVP v1 完成后的稳定化与下一阶段规划`。截至 `2026-04-24`，项目已经补齐快照缓存、提醒规则 v1、IBKR 真实/模拟 profile 切换、策略线索扫描和追踪页策略线索展示。
+第一版 MVP 已于 `2026-04-17` 完成，当前仓库已进入 `MVP v1 完成后的稳定化与下一阶段规划`。截至 `2026-04-27`，项目已经补齐快照缓存、提醒规则 v1、IBKR 真实/模拟 profile 切换、策略线索扫描、追踪页区间位置展示和刷新防卡住保护。
 
 当前已落地的核心能力：
 
@@ -16,6 +16,8 @@ TradeBrain 是一个本地优先的辅助交易工作台，用来监控自选标
 - Web 看板
 - 可配置提醒规则
 - 策略线索扫描
+- 追踪页区间位置：52W / 90D High 距离、Low 涨幅和区间进度条
+- 手动刷新超时保护：IBKR 未就绪时保留旧快照，不让页面一直转圈
 
 ## 技术栈
 
@@ -188,6 +190,8 @@ IBKR_PAPER_CLIENT_ID=2
 IBKR_PAPER_ACCOUNT_ID=
 IBKR_MARKET_DATA_TYPE=delayed
 IBKR_MARKET_DATA_WAIT_SECONDS=8.0
+IBKR_CONNECT_TIMEOUT_SECONDS=5.0
+IBKR_REQUEST_TIMEOUT_SECONDS=12.0
 
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
@@ -204,7 +208,7 @@ TELEGRAM_CHAT_ID=
 ## 当前页面
 
 - `Overview`：券商连接状态和快照摘要
-- `Monitor`：watchlist、行情指标、PEG、估值标签、状态变化、策略线索
+- `Monitor`：watchlist、行情指标、52W/90D 区间位置、PEG、估值标签、状态变化、策略线索
 - `Alerts`：提醒规则管理、发送成功/失败/抑制统计
 - `Portfolio`：账户余额、持仓、浮盈亏
 - `Settings`：IBKR 真实/模拟 TWS 配置、快照自动刷新、Telegram 配置与测试发送
@@ -242,6 +246,16 @@ TELEGRAM_CHAT_ID=
 - `Settings` 页面可以关闭自动刷新，或设置为 `5 / 15 / 30 / 60 分钟`。
 - 自动刷新由后端后台任务执行；浏览器关闭后，只要后端还在运行，就会继续刷新。
 - 页面仍然优先读取最近一次成功快照，刷新失败不会清空旧数据。
+- 手动刷新如果遇到 TWS 刚启动、端口未就绪或 IBKR 请求过慢，会在前端超时提示并保留旧数据。
+- 后端同一时间只允许一轮快照刷新，避免自动刷新和手动刷新互相叠加。
+
+## 追踪页指标说明
+
+- `区间位置` 列只展示后端已经计算好的指标，不在前端重新计算业务数据。
+- `52W High -7.11%` 表示当前价距离 52 周高点低 `7.11%`。
+- `52W Low +38.82%` 表示当前价相对 52 周低点上涨 `38.82%`。
+- `90D` 同理，表示近 90 天区间。
+- 细进度条表示当前价格在对应高低区间里的相对位置。
 
 ## 怎么验收 MVP
 
@@ -296,8 +310,5 @@ npm run build
 
 ## 相关文档
 
-- [prd.md](D:\code\TradeBrain\docs\prd.md)
-- [arch.md](D:\code\TradeBrain\docs\arch.md)
-- [mvp.md](D:\code\TradeBrain\docs\mvp.md)
-- [tech.md](D:\code\TradeBrain\docs\tech.md)
+- [design.md](D:\code\TradeBrain\docs\design.md)
 - [handoff.md](D:\code\TradeBrain\docs\handoff.md)

@@ -121,7 +121,9 @@ class MockIBKRClient(IBKRClient):
         last_price = quote.last_price or 0.0
         return PriceReferenceLevels(
             high_52w=round(last_price * 1.18, 2) if last_price else None,
+            low_52w=round(last_price * 0.72, 2) if last_price else None,
             high_90d=round(last_price * 1.08, 2) if last_price else None,
+            low_90d=round(last_price * 0.88, 2) if last_price else None,
             source="mock",
             as_of=now,
         )
@@ -203,10 +205,12 @@ class LiveIBKRClient(IBKRClient):
                 | StartupFetch.ACCOUNT_UPDATES
                 | StartupFetch.SUB_ACCOUNT_UPDATES
             )
+            ib.RequestTimeout = self._request_timeout_seconds()
             ib.connect(
                 self.profile.host,
                 self.profile.port,
                 clientId=self.profile.client_id,
+                timeout=self._connect_timeout_seconds(),
                 readonly=True,
                 account=self.profile.account_id,
                 fetchFields=startup_fetch,
@@ -299,10 +303,12 @@ class LiveIBKRClient(IBKRClient):
         ib = IB()
         try:
             startup_fetch = StartupFetch.ACCOUNT_UPDATES | StartupFetch.SUB_ACCOUNT_UPDATES
+            ib.RequestTimeout = self._request_timeout_seconds()
             ib.connect(
                 self.profile.host,
                 self.profile.port,
                 clientId=self.profile.client_id,
+                timeout=self._connect_timeout_seconds(),
                 readonly=True,
                 account=self.profile.account_id,
                 fetchFields=startup_fetch,
@@ -481,6 +487,7 @@ class LiveIBKRClient(IBKRClient):
                     barSizeSetting="1 day",
                     whatToShow="TRADES",
                     useRTH=False,
+                    timeout=self._request_timeout_seconds(),
                 )
                 reference_levels[symbol] = self._reference_levels_from_bars(bars, now)
             except Exception as exc:
@@ -615,25 +622,35 @@ class LiveIBKRClient(IBKRClient):
 
     def _reference_levels_from_bars(self, bars, now: datetime) -> PriceReferenceLevels:
         highs: list[float] = []
+        lows: list[float] = []
         recent_highs: list[float] = []
+        recent_lows: list[float] = []
         cutoff = now - timedelta(days=90)
 
         for bar in bars:
             high = self._to_float(getattr(bar, "high", None))
-            if high is None:
-                continue
+            low = self._to_float(getattr(bar, "low", None))
 
-            highs.append(high)
+            if high is not None:
+                highs.append(high)
             bar_dt = self._normalize_bar_datetime(getattr(bar, "date", None))
-            if bar_dt is not None and bar_dt >= cutoff:
+            if high is not None and bar_dt is not None and bar_dt >= cutoff:
                 recent_highs.append(high)
+            if low is not None:
+                lows.append(low)
+            if low is not None and bar_dt is not None and bar_dt >= cutoff:
+                recent_lows.append(low)
 
         if not recent_highs and highs:
             recent_highs = highs[-65:]
+        if not recent_lows and lows:
+            recent_lows = lows[-65:]
 
         return PriceReferenceLevels(
             high_52w=round(max(highs), 2) if highs else None,
+            low_52w=round(min(lows), 2) if lows else None,
             high_90d=round(max(recent_highs), 2) if recent_highs else None,
+            low_90d=round(min(recent_lows), 2) if recent_lows else None,
             source="live",
             as_of=now,
         )
@@ -689,6 +706,12 @@ class LiveIBKRClient(IBKRClient):
         if isnan(numeric) or numeric <= -99999:
             return None
         return numeric
+
+    def _connect_timeout_seconds(self) -> float:
+        return max(float(self.settings.ibkr_connect_timeout_seconds), 1.0)
+
+    def _request_timeout_seconds(self) -> float:
+        return max(float(self.settings.ibkr_request_timeout_seconds), 1.0)
 
 
 @lru_cache(maxsize=1)

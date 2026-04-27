@@ -18,11 +18,13 @@ const navItems = [
 ];
 
 export function App() {
-  const [refreshStatus, setRefreshStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [refreshStatus, setRefreshStatus] = useState<
+    "idle" | "loading" | "success" | "pending" | "error"
+  >("idle");
   const [refreshMessage, setRefreshMessage] = useState("");
 
   useEffect(() => {
-    if (refreshStatus !== "success" && refreshStatus !== "error") {
+    if (refreshStatus !== "success" && refreshStatus !== "pending" && refreshStatus !== "error") {
       return;
     }
 
@@ -42,7 +44,10 @@ export function App() {
       const response = await refreshSnapshot();
       dispatchSnapshotRefreshed(response);
 
-      if (response.last_error) {
+      if (response.cache_status === "refreshing") {
+        setRefreshStatus("pending");
+        setRefreshMessage("正在获取，旧数据先保留");
+      } else if (response.last_error) {
         setRefreshStatus("error");
         setRefreshMessage("获取失败，已保留旧数据");
       } else {

@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     ibkr_paper_account_id: str = ""
     ibkr_market_data_type: str = "delayed"
     ibkr_market_data_wait_seconds: float = 8.0
+    ibkr_connect_timeout_seconds: float = 5.0
+    ibkr_request_timeout_seconds: float = 12.0
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

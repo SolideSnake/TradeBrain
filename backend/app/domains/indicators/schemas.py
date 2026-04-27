@@ -9,7 +9,9 @@ from app.core.types.common import ValuationLabel
 
 class PriceReferenceLevels(BaseModel):
     high_52w: float | None = None
+    low_52w: float | None = None
     high_90d: float | None = None
+    low_90d: float | None = None
     source: str = "unknown"
     as_of: datetime | None = None
 
@@ -23,9 +25,13 @@ class IndicatorSnapshot(BaseModel):
     unrealized_pnl: float | None = None
     unrealized_pnl_percent: float | None = None
     high_52w: float | None = None
+    low_52w: float | None = None
     drawdown_from_52w_high_percent: float | None = None
+    gain_from_52w_low_percent: float | None = None
     high_90d: float | None = None
+    low_90d: float | None = None
     drawdown_from_90d_high_percent: float | None = None
+    gain_from_90d_low_percent: float | None = None
     pe_ratio: float | None = None
     earnings_growth_rate_percent: float | None = None
     peg_ratio: float | None = None

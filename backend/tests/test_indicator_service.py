@@ -23,7 +23,9 @@ def test_indicator_service_builds_watchlist_metrics():
     )
     reference_levels = PriceReferenceLevels(
         high_52w=200.0,
+        low_52w=120.0,
         high_90d=190.0,
+        low_90d=160.0,
         source="test",
     )
     fundamentals = FundamentalSnapshot(
@@ -39,8 +41,11 @@ def test_indicator_service_builds_watchlist_metrics():
     assert indicators.market_value == 1800.0
     assert indicators.unrealized_pnl == 300.0
     assert indicators.unrealized_pnl_percent == 20.0
+    assert indicators.low_52w == 120.0
     assert indicators.drawdown_from_52w_high_percent == 10.0
+    assert indicators.gain_from_52w_low_percent == 50.0
     assert indicators.drawdown_from_90d_high_percent == 5.26
+    assert indicators.gain_from_90d_low_percent == 12.5
     assert indicators.pe_ratio == 18.0
     assert indicators.earnings_growth_rate_percent == 24.0
     assert indicators.peg_ratio == 0.75
