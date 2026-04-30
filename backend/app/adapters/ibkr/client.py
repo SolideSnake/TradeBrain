@@ -9,6 +9,7 @@ from xml.etree import ElementTree
 
 from app.config.settings import Settings, get_settings
 from app.domains.fundamentals.schemas import FundamentalSnapshot
+from app.domains.fx.schemas import FxRateSnapshot
 from app.domains.indicators.schemas import PriceReferenceLevels
 from app.domains.market.schemas import QuoteSnapshot
 from app.domains.portfolio.schemas import AccountSnapshot, PositionSnapshot
@@ -76,6 +77,8 @@ class MockIBKRClient(IBKRClient):
         account = AccountSnapshot(
             account_id=self.settings.ibkr_account_id or "MOCK-ACCOUNT",
             net_liquidation=250000.0,
+            cash_balance=82000.0,
+            settled_cash=82000.0,
             available_funds=82000.0,
             buying_power=164000.0,
             currency="USD",
@@ -112,9 +115,15 @@ class MockIBKRClient(IBKRClient):
             change_percent=change_percent,
             bid=bid,
             ask=ask,
+            currency=self._currency_for_symbol(symbol),
             as_of=now,
             source="mock",
         )
+
+    def _currency_for_symbol(self, symbol: str) -> str:
+        if symbol.isdigit() and len(symbol) == 6:
+            return "KRW"
+        return "USD"
 
     def _build_reference_levels(self, symbol: str, now: datetime) -> PriceReferenceLevels:
         quote = self._build_quote(symbol, now)
@@ -174,7 +183,7 @@ class LiveIBKRClient(IBKRClient):
         now = datetime.now(UTC)
 
         try:
-            from ib_async import IB, StartupFetch, Stock
+            from ib_async import IB, Forex, StartupFetch, Stock
         except ImportError:
             return BrokerSnapshotEnvelope(
                 mode="live",
@@ -198,13 +207,9 @@ class LiveIBKRClient(IBKRClient):
         positions: list[PositionSnapshot] = []
         reference_levels: dict[str, PriceReferenceLevels] = {}
         fundamentals: dict[str, FundamentalSnapshot] = {}
+        fx_rates: dict[str, FxRateSnapshot] = {}
 
         try:
-            startup_fetch = (
-                StartupFetch.POSITIONS
-                | StartupFetch.ACCOUNT_UPDATES
-                | StartupFetch.SUB_ACCOUNT_UPDATES
-            )
             ib.RequestTimeout = self._request_timeout_seconds()
             ib.connect(
                 self.profile.host,
@@ -213,7 +218,7 @@ class LiveIBKRClient(IBKRClient):
                 timeout=self._connect_timeout_seconds(),
                 readonly=True,
                 account=self.profile.account_id,
-                fetchFields=startup_fetch,
+                fetchFields=StartupFetch(0),
             )
 
             if self.settings.ibkr_market_data_type == "delayed":
@@ -223,11 +228,19 @@ class LiveIBKRClient(IBKRClient):
             else:
                 ib.reqMarketDataType(1)
 
-            accounts = list(ib.managedAccounts())
+            accounts = self._safe_managed_accounts(ib, warnings)
             account_id = self.profile.account_id or (accounts[0] if accounts else "")
 
-            account = self._build_account_snapshot(ib, account_id, now)
-            positions = self._build_positions(ib, account_id)
+            account = self._safe_build_account_snapshot(ib, account_id, now, warnings)
+            positions = self._safe_build_positions(ib, account_id, warnings)
+            fx_rates = self._build_fx_rates(
+                ib,
+                Forex,
+                {position.currency for position in positions},
+                account.currency,
+                now,
+                warnings,
+            )
             symbols = sorted(
                 {
                     *{symbol.strip().upper() for symbol in tracked_symbols if symbol},
@@ -265,6 +278,7 @@ class LiveIBKRClient(IBKRClient):
                 quotes=quotes,
                 reference_levels=reference_levels,
                 fundamentals=fundamentals,
+                fx_rates=fx_rates,
                 warnings=warnings,
             )
         except ConnectionRefusedError:
@@ -272,7 +286,7 @@ class LiveIBKRClient(IBKRClient):
                 "Could not connect to IBKR. Check TWS/Gateway, API port, and trusted IP settings."
             )
         except Exception as exc:
-            warnings.append(f"IBKR live snapshot failed: {exc}")
+            warnings.append(f"IBKR live snapshot failed: {self._describe_exception(exc)}")
         finally:
             if getattr(ib, "isConnected", lambda: False)():
                 ib.disconnect()
@@ -302,7 +316,6 @@ class LiveIBKRClient(IBKRClient):
 
         ib = IB()
         try:
-            startup_fetch = StartupFetch.ACCOUNT_UPDATES | StartupFetch.SUB_ACCOUNT_UPDATES
             ib.RequestTimeout = self._request_timeout_seconds()
             ib.connect(
                 self.profile.host,
@@ -311,7 +324,7 @@ class LiveIBKRClient(IBKRClient):
                 timeout=self._connect_timeout_seconds(),
                 readonly=True,
                 account=self.profile.account_id,
-                fetchFields=startup_fetch,
+                fetchFields=StartupFetch(0),
             )
             accounts = list(ib.managedAccounts())
             if self.profile.account_id and self.profile.account_id not in accounts:
@@ -325,7 +338,7 @@ class LiveIBKRClient(IBKRClient):
         except ConnectionRefusedError:
             return False, [], self._connection_help("TWS 未监听该端口，或当前连接的是另一个 TWS 会话。")
         except Exception as exc:
-            return False, [], self._connection_help(str(exc))
+            return False, [], self._connection_help(self._describe_exception(exc))
         finally:
             if getattr(ib, "isConnected", lambda: False)():
                 ib.disconnect()
@@ -340,9 +353,44 @@ class LiveIBKRClient(IBKRClient):
             "Trusted IPs 允许 127.0.0.1，且 clientId 没有被其他 API 客户端占用。"
         )
 
+    def _safe_managed_accounts(self, ib, warnings: list[str]) -> list[str]:
+        try:
+            return list(ib.managedAccounts())
+        except Exception as exc:
+            warnings.append(f"Failed to load IBKR managed accounts: {self._describe_exception(exc)}")
+            return []
+
+    def _safe_build_account_snapshot(
+        self,
+        ib,
+        account_id: str,
+        now: datetime,
+        warnings: list[str],
+    ) -> AccountSnapshot:
+        try:
+            return self._build_account_snapshot(ib, account_id, now)
+        except Exception as exc:
+            warnings.append(f"Failed to load IBKR account summary: {self._describe_exception(exc)}")
+            return AccountSnapshot(
+                account_id=account_id,
+                source="live",
+                updated_at=now,
+            )
+
+    def _safe_build_positions(
+        self,
+        ib,
+        account_id: str,
+        warnings: list[str],
+    ) -> list[PositionSnapshot]:
+        try:
+            return self._build_positions(ib, account_id)
+        except Exception as exc:
+            warnings.append(f"Failed to load IBKR positions: {self._describe_exception(exc)}")
+            return []
+
     def _build_account_snapshot(self, ib, account_id: str, now: datetime) -> AccountSnapshot:
         summary_items = ib.accountSummary(account_id) if account_id else []
-        summary = {item.tag: item.value for item in summary_items}
         currency = next(
             (
                 item.currency
@@ -351,16 +399,44 @@ class LiveIBKRClient(IBKRClient):
             ),
             "USD",
         )
+        total_cash_value = self._account_summary_float(summary_items, "TotalCashValue", currency)
+        cash_balance = (
+            total_cash_value
+            if total_cash_value is not None
+            else self._account_summary_float(summary_items, "CashBalance", currency)
+        )
 
         return AccountSnapshot(
             account_id=account_id,
-            net_liquidation=self._to_float(summary.get("NetLiquidation")),
-            available_funds=self._to_float(summary.get("AvailableFunds")),
-            buying_power=self._to_float(summary.get("BuyingPower")),
+            net_liquidation=self._account_summary_float(summary_items, "NetLiquidation", currency),
+            cash_balance=cash_balance,
+            settled_cash=self._account_summary_float(summary_items, "SettledCash", currency),
+            available_funds=self._account_summary_float(summary_items, "AvailableFunds", currency),
+            buying_power=self._account_summary_float(summary_items, "BuyingPower", currency),
             currency=currency,
             source="live",
             updated_at=now,
         )
+
+    def _account_summary_float(
+        self,
+        summary_items: Sequence[object],
+        tag: str,
+        currency: str,
+    ) -> float | None:
+        preferred_currency = currency.strip().upper()
+        matching_items = [
+            item for item in summary_items if getattr(item, "tag", "") == tag
+        ]
+
+        for item in matching_items:
+            item_currency = str(getattr(item, "currency", "")).strip().upper()
+            if item_currency == preferred_currency:
+                return self._to_float(getattr(item, "value", None))
+
+        if matching_items:
+            return self._to_float(getattr(matching_items[0], "value", None))
+        return None
 
     def _build_positions(self, ib, account_id: str) -> list[PositionSnapshot]:
         rows: list[PositionSnapshot] = []
@@ -373,6 +449,7 @@ class LiveIBKRClient(IBKRClient):
             symbol = getattr(contract, "symbol", "")
             if not symbol:
                 continue
+            symbol = symbol.strip().upper()
 
             rows.append(
                 PositionSnapshot(
@@ -385,6 +462,87 @@ class LiveIBKRClient(IBKRClient):
             )
         return rows
 
+    def _build_fx_rates(
+        self,
+        ib,
+        forex_cls,
+        currencies: set[str],
+        base_currency: str,
+        now: datetime,
+        warnings: list[str],
+    ) -> dict[str, FxRateSnapshot]:
+        normalized_base = base_currency.strip().upper() or "USD"
+        rates: dict[str, FxRateSnapshot] = {}
+
+        for currency in sorted({currency.strip().upper() for currency in currencies if currency}):
+            if currency == normalized_base:
+                rates[currency] = FxRateSnapshot(
+                    from_currency=currency,
+                    to_currency=normalized_base,
+                    rate=1.0,
+                    source="identity",
+                    as_of=now,
+                )
+                continue
+
+            rate = self._fetch_fx_rate_to_base(ib, forex_cls, currency, normalized_base)
+            if rate is None:
+                warnings.append(
+                    f"Failed to load FX rate for {currency}->{normalized_base}; "
+                    "base-currency portfolio totals may exclude this position."
+                )
+                continue
+
+            rates[currency] = FxRateSnapshot(
+                from_currency=currency,
+                to_currency=normalized_base,
+                rate=rate,
+                source="ibkr-fx",
+                as_of=now,
+            )
+
+        return rates
+
+    def _fetch_fx_rate_to_base(
+        self,
+        ib,
+        forex_cls,
+        from_currency: str,
+        base_currency: str,
+    ) -> float | None:
+        direct_price = self._fetch_fx_pair_price(ib, forex_cls, f"{from_currency}{base_currency}")
+        if direct_price is not None:
+            return direct_price
+
+        inverse_price = self._fetch_fx_pair_price(ib, forex_cls, f"{base_currency}{from_currency}")
+        if inverse_price not in (None, 0):
+            return round(1 / inverse_price, 10)
+        return None
+
+    def _fetch_fx_pair_price(self, ib, forex_cls, pair: str) -> float | None:
+        try:
+            qualified_contracts = ib.qualifyContracts(forex_cls(pair))
+        except Exception:
+            return None
+
+        contract = self._first_valid_contract(qualified_contracts)
+        if contract is None:
+            return None
+
+        ticker = None
+        try:
+            ticker = ib.reqMktData(contract, "", False, False)
+            self._wait_for_market_data(ib, [ticker])
+            return self._resolve_last_price(ticker)
+        except Exception:
+            return None
+        finally:
+            if ticker is not None:
+                try:
+                    ib.cancelMktData(contract)
+                except Exception:
+                    pass
+
     def _build_stock_contracts(
         self,
         ib,
@@ -396,20 +554,42 @@ class LiveIBKRClient(IBKRClient):
         unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
 
         for symbol in unique_symbols:
-            contract = stock_cls(symbol, "SMART", "USD")
+            ibkr_symbol, exchange, currency = self._stock_contract_spec(symbol)
+            contract = stock_cls(ibkr_symbol, exchange, currency)
             try:
                 qualified_contracts = ib.qualifyContracts(contract)
             except Exception as exc:
-                warnings.append(f"Failed to qualify stock contract for {symbol}: {exc}")
+                warnings.append(
+                    f"Failed to qualify stock contract for {symbol}: {self._describe_exception(exc)}"
+                )
                 continue
 
-            if not qualified_contracts:
+            qualified_contract = self._first_valid_contract(qualified_contracts)
+            if qualified_contract is None:
                 warnings.append(f"Failed to qualify stock contract for {symbol}.")
                 continue
 
-            contracts[symbol] = qualified_contracts[0]
+            contracts[symbol] = qualified_contract
 
         return contracts
+
+    def _stock_contract_spec(self, symbol: str) -> tuple[str, str, str]:
+        normalized_symbol = symbol.strip().upper()
+        if normalized_symbol.isdigit() and len(normalized_symbol) == 6:
+            return normalized_symbol, "KRX", "KRW"
+        return self._to_ibkr_stock_symbol(normalized_symbol), "SMART", "USD"
+
+    def _to_ibkr_stock_symbol(self, symbol: str) -> str:
+        # IBKR commonly represents class shares such as BRK.B as BRK B.
+        return symbol.strip().upper().replace(".", " ")
+
+    def _first_valid_contract(self, contracts: Sequence[object]) -> object | None:
+        for contract in contracts:
+            if contract is None:
+                continue
+            if getattr(contract, "secType", None):
+                return contract
+        return None
 
     def _build_quotes_and_ratio_payloads(
         self,
@@ -428,7 +608,7 @@ class LiveIBKRClient(IBKRClient):
         ratio_payloads: dict[str, dict[str, float]] = {}
         for symbol, ticker in tickers:
             last_price = self._resolve_last_price(ticker)
-            previous_close = self._to_float(getattr(ticker, "close", None))
+            previous_close = self._resolve_previous_close(ticker)
             change_percent = None
             if last_price is not None and previous_close not in (None, 0):
                 change_percent = round(((last_price - previous_close) / previous_close) * 100, 2)
@@ -440,6 +620,7 @@ class LiveIBKRClient(IBKRClient):
                 change_percent=change_percent,
                 bid=self._to_positive_price(getattr(ticker, "bid", None)),
                 ask=self._to_positive_price(getattr(ticker, "ask", None)),
+                currency=self._quote_currency(symbol, contract),
                 as_of=now,
                 source="live",
             )
@@ -465,9 +646,7 @@ class LiveIBKRClient(IBKRClient):
             elapsed_seconds += sleep_seconds
 
     def _ticker_has_price(self, ticker) -> bool:
-        if self._resolve_last_price(ticker) is not None:
-            return True
-        return self._to_positive_price(getattr(ticker, "previousClose", None)) is not None
+        return self._resolve_last_price(ticker) is not None
 
     def _build_reference_levels(
         self,
@@ -675,15 +854,44 @@ class LiveIBKRClient(IBKRClient):
         if last is not None:
             return last
 
+        market_price = self._resolve_market_price(ticker)
+        if market_price is not None:
+            return market_price
+
         close = self._to_positive_price(getattr(ticker, "close", None))
         if close is not None:
             return close
+
+        previous_close = self._to_positive_price(getattr(ticker, "previousClose", None))
+        if previous_close is not None:
+            return previous_close
 
         bid = self._to_positive_price(getattr(ticker, "bid", None))
         ask = self._to_positive_price(getattr(ticker, "ask", None))
         if bid is not None and ask is not None:
             return round((bid + ask) / 2, 2)
         return None
+
+    def _resolve_previous_close(self, ticker) -> float | None:
+        close = self._to_positive_price(getattr(ticker, "close", None))
+        if close is not None:
+            return close
+        return self._to_positive_price(getattr(ticker, "previousClose", None))
+
+    def _resolve_market_price(self, ticker) -> float | None:
+        market_price = getattr(ticker, "marketPrice", None)
+        if not callable(market_price):
+            return None
+        try:
+            return self._to_positive_price(market_price())
+        except Exception:
+            return None
+
+    def _quote_currency(self, symbol: str, contract: object) -> str:
+        # KRX six-digit tickers can come back with incomplete contract metadata.
+        if symbol.isdigit() and len(symbol) == 6:
+            return "KRW"
+        return getattr(contract, "currency", "USD") or "USD"
 
     def _to_positive_price(self, value: object) -> float | None:
         numeric = self._to_float(value)
@@ -706,6 +914,19 @@ class LiveIBKRClient(IBKRClient):
         if isnan(numeric) or numeric <= -99999:
             return None
         return numeric
+
+    def _describe_exception(self, exc: Exception) -> str:
+        detail = str(exc).strip()
+        if detail:
+            return detail
+
+        name = type(exc).__name__
+        if name == "TimeoutError":
+            return (
+                "请求超时。TWS 可能刚启动尚未完成同步，或当前 clientId 被占用，"
+                "也可能是账户/行情权限响应过慢。"
+            )
+        return name
 
     def _connect_timeout_seconds(self) -> float:
         return max(float(self.settings.ibkr_connect_timeout_seconds), 1.0)

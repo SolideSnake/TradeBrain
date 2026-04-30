@@ -13,7 +13,7 @@ import {
 } from "../shared/api";
 import { formatCurrency, formatPercent } from "../shared/formatters";
 
-const columns = ["标的", "行情", "区间位置", "估值状态", "变化", "操作"];
+const columns = ["代码", "行情", "区间位置", "估值状态", "变化", "操作"];
 
 export function MonitorPage() {
   const { snapshot, loading, error, setError, applySnapshotResponse } = useSnapshotResource({
@@ -157,17 +157,14 @@ export function MonitorPage() {
     return `${formatValuationLabel(previous)} -> ${formatValuationLabel(current)}`;
   }
 
-  function indicatorTone(value: number | null, preferLower = false) {
+  function marketToneClass(value: number | null) {
     if (value === null) {
       return "muted";
     }
     if (value === 0) {
-      return "neutral";
+      return "value-neutral";
     }
-    if (preferLower) {
-      return value <= 5 ? "positive" : "warning";
-    }
-    return value > 0 ? "positive" : "negative";
+    return value > 0 ? "market-value-positive" : "market-value-negative";
   }
 
   function rowPriority(entry: CanonicalSnapshot["watchlist"][number]) {
@@ -221,7 +218,7 @@ export function MonitorPage() {
         </div>
 
         <form className="monitor-inline-add" onSubmit={handleSubmit} noValidate>
-          <div className="monitor-inline-add-field">
+          <div className={`monitor-inline-add-field${addError ? " has-error" : ""}`}>
             <input
               ref={symbolInputRef}
               value={symbolInput}
@@ -232,6 +229,7 @@ export function MonitorPage() {
               placeholder="输入代码，如 AAPL"
               maxLength={32}
               aria-label="新增标的代码"
+              aria-invalid={addError ? true : undefined}
               aria-describedby={addError ? "monitor-add-error" : undefined}
             />
             {addError ? (
@@ -311,8 +309,12 @@ export function MonitorPage() {
                 </div>
 
                 <div className="cell-stack">
-                  <span>{formatCurrency(entry.indicators?.current_price ?? null, "USD", { digits: 2 })}</span>
-                  <span className={`value-${indicatorTone(entry.indicators?.day_change_percent ?? null)}`}>
+                  <span>
+                    {formatCurrency(entry.indicators?.current_price ?? null, entryCurrency(entry), {
+                      digits: 2,
+                    })}
+                  </span>
+                  <span className={marketToneClass(entry.indicators?.day_change_percent ?? null)}>
                     日内 {formatPercent(entry.indicators?.day_change_percent ?? null)}
                   </span>
                 </div>
@@ -361,11 +363,13 @@ export function MonitorPage() {
 
 function RangePositionCell({ entry }: { entry: SnapshotWatchlistItem }) {
   const indicators = entry.indicators;
+  const currency = entryCurrency(entry);
 
   return (
     <div className="range-position-cell">
       <RangePositionGroup
         period="52W"
+        currency={currency}
         currentPrice={indicators?.current_price ?? null}
         high={indicators?.high_52w ?? null}
         low={indicators?.low_52w ?? null}
@@ -374,6 +378,7 @@ function RangePositionCell({ entry }: { entry: SnapshotWatchlistItem }) {
       />
       <RangePositionGroup
         period="90D"
+        currency={currency}
         currentPrice={indicators?.current_price ?? null}
         high={indicators?.high_90d ?? null}
         low={indicators?.low_90d ?? null}
@@ -386,6 +391,7 @@ function RangePositionCell({ entry }: { entry: SnapshotWatchlistItem }) {
 
 function RangePositionGroup({
   period,
+  currency,
   currentPrice,
   high,
   low,
@@ -393,6 +399,7 @@ function RangePositionGroup({
   lowDistancePercent,
 }: {
   period: string;
+  currency: string;
   currentPrice: number | null;
   high: number | null;
   low: number | null;
@@ -406,19 +413,23 @@ function RangePositionGroup({
       <div className="range-position-topline">
         <span className="range-period">{period}</span>
         <div className="range-chip-row">
-          <span className="range-chip range-chip-high">
-            <span>High</span>
-            <strong>{formatHighDistance(highDistancePercent)}</strong>
-          </span>
           <span className="range-chip range-chip-low">
-            <span>Low</span>
+            <span>L</span>
             <strong>{formatSignedPercent(lowDistancePercent)}</strong>
+          </span>
+          <span className="range-chip range-chip-high">
+            <span>H</span>
+            <strong>{formatHighDistance(highDistancePercent)}</strong>
           </span>
         </div>
       </div>
       {progress !== null ? (
-        <div className="range-progress" aria-label={`${period} 区间位置 ${progress.toFixed(0)}%`}>
-          <span style={{ width: `${progress}%` }} />
+        <div className="range-progress-row">
+          <span className="range-price">{formatRangePrice(low, currency)}</span>
+          <div className="range-progress" aria-label={`${period} 区间位置 ${progress.toFixed(0)}%`}>
+            <span style={{ width: `${progress}%` }} />
+          </div>
+          <span className="range-price">{formatRangePrice(high, currency)}</span>
         </div>
       ) : null}
     </div>
@@ -438,6 +449,17 @@ function formatSignedPercent(value: number | null) {
   }
   const prefix = value > 0 ? "+" : "";
   return `${prefix}${value.toFixed(2)}%`;
+}
+
+function formatRangePrice(value: number | null, currency: string) {
+  return formatCurrency(value, currency, { digits: 2 });
+}
+
+function entryCurrency(entry: SnapshotWatchlistItem) {
+  if (entry.market === "KR") {
+    return "KRW";
+  }
+  return entry.quote?.currency ?? "USD";
 }
 
 function rangePositionPercent(

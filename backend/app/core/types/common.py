@@ -4,6 +4,7 @@ from enum import StrEnum
 class Market(StrEnum):
     US = "US"
     HK = "HK"
+    KR = "KR"
     OTHER = "OTHER"
 
 
@@ -31,6 +32,7 @@ class AlertLevel(StrEnum):
 
 class AlertChannel(StrEnum):
     TELEGRAM = "telegram"
+    FEISHU = "feishu"
 
 
 class AlertDeliveryStatus(StrEnum):

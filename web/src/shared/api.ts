@@ -1,9 +1,11 @@
-export type Market = "US" | "HK" | "OTHER";
+export type Market = "US" | "HK" | "KR" | "OTHER";
 export type AssetType = "stock" | "etf" | "bond" | "other";
 export type ValuationLabel = "undervalued" | "fair" | "overvalued";
-export type AlertChannel = "telegram";
+export type AlertChannel = "telegram" | "feishu";
 export type AlertLevel = "info" | "warning" | "critical";
 export type AlertDeliveryStatus = "sent" | "skipped" | "failed";
+export type EventSeverity = "info" | "warning" | "critical";
+export type EventStatus = "success" | "failed" | "skipped" | "sent" | string;
 export type AlertRuleSource = "watchlist" | "portfolio" | "custom";
 export type AlertRuleCategory = "threshold" | "event" | "schedule" | "composite";
 export type AlertRuleMetric =
@@ -66,6 +68,7 @@ export interface QuoteSnapshot {
   change_percent: number | null;
   bid: number | null;
   ask: number | null;
+  currency: string;
   as_of: string | null;
   source: string;
 }
@@ -79,6 +82,12 @@ export interface PositionSnapshot {
   unrealized_pnl: number | null;
   unrealized_pnl_percent: number | null;
   currency: string;
+  base_currency: string;
+  fx_rate_to_base: number | null;
+  average_cost_base: number | null;
+  market_price_base: number | null;
+  market_value_base: number | null;
+  unrealized_pnl_base: number | null;
   account_id: string;
 }
 
@@ -130,15 +139,19 @@ export interface WatchlistStateSnapshot {
   evaluated_at: string;
 }
 
-export interface AlertEvent {
+export interface EventRecord {
   id: number;
-  symbol: string;
-  channel: AlertChannel;
-  level: AlertLevel;
-  delivery_status: AlertDeliveryStatus;
+  event_type: string;
+  source: string;
+  severity: EventSeverity | string;
   title: string;
   message: string;
-  error_detail: string;
+  symbol: string;
+  status: EventStatus;
+  entity_type: string;
+  entity_id: string;
+  payload: Record<string, unknown>;
+  occurred_at: string;
   created_at: string;
 }
 
@@ -147,12 +160,19 @@ export interface NotificationSettings {
   telegram_bot_token_configured: boolean;
   telegram_bot_token_masked: string | null;
   telegram_chat_id: string;
+  feishu_enabled: boolean;
+  feishu_webhook_url_configured: boolean;
+  feishu_webhook_url_masked: string | null;
+  feishu_secret_configured: boolean;
+  feishu_secret_masked: string | null;
   source: NotificationSettingsSource;
 }
 
 export interface UpdateNotificationSettingsPayload {
   telegram_bot_token?: string;
   telegram_chat_id?: string;
+  feishu_webhook_url?: string;
+  feishu_secret?: string;
 }
 
 export interface NotificationTestResult {
@@ -288,6 +308,8 @@ export interface IBKRConnectionTestResult {
 export interface AccountSnapshot {
   account_id: string;
   net_liquidation: number | null;
+  cash_balance: number | null;
+  settled_cash: number | null;
   available_funds: number | null;
   buying_power: number | null;
   currency: string;
@@ -443,8 +465,8 @@ export function getScannerResult(): Promise<ScannerResult> {
   return request<ScannerResult>("/api/scanner");
 }
 
-export function listAlerts(): Promise<AlertEvent[]> {
-  return request<AlertEvent[]>("/api/alerts");
+export function listEvents(limit = 50): Promise<EventRecord[]> {
+  return request<EventRecord[]>(`/api/events?limit=${limit}`);
 }
 
 export function listAlertRules(): Promise<AlertRule[]> {

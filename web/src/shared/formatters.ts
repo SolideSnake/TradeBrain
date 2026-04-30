@@ -1,5 +1,5 @@
 export function formatCurrency(
-  value: number | null,
+  value: number | null | undefined,
   currency: string,
   options?: {
     digits?: number;
@@ -7,7 +7,7 @@ export function formatCurrency(
     locale?: string;
   },
 ) {
-  if (value === null) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
     return "--";
   }
 

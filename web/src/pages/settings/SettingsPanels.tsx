@@ -321,15 +321,23 @@ export function NotificationSettingsSection(props: { state: NotificationSettings
     <form onSubmit={state.handleSubmit}>
       <SettingsPanel
         title="通知设置"
-        description="Bot token 留空时不会覆盖已保存值；保存后建议发送测试消息验证整条提醒链路。"
+        description="支持 Telegram 和飞书自定义机器人。敏感字段留空时不会覆盖已保存值；保存后建议发送测试消息验证整条提醒链路。"
         actions={
           <button type="button" className="button button-secondary" onClick={() => void state.reload()}>
             重新读取
           </button>
         }
         meta={
-          <SettingsBadge tone={state.notificationSettings?.telegram_enabled ? "positive" : "warning"}>
-            {state.notificationSettings?.telegram_enabled ? "Telegram 已就绪" : "Telegram 待配置"}
+          <SettingsBadge
+            tone={
+              state.notificationSettings?.telegram_enabled || state.notificationSettings?.feishu_enabled
+                ? "positive"
+                : "warning"
+            }
+          >
+            {state.notificationSettings?.telegram_enabled || state.notificationSettings?.feishu_enabled
+              ? "通知通道已就绪"
+              : "通知通道待配置"}
           </SettingsBadge>
         }
       >
@@ -344,11 +352,14 @@ export function NotificationSettingsSection(props: { state: NotificationSettings
                 配置来源：{state.notificationSettings ? sourceLabel(state.notificationSettings.source) : "--"}
               </SettingsBadge>
               <SettingsBadge tone={state.notificationSettings?.telegram_bot_token_configured ? "positive" : "warning"}>
-                Bot Token：{state.notificationSettings?.telegram_bot_token_configured ? "已保存" : "未保存"}
+                Telegram：{state.notificationSettings?.telegram_enabled ? "已就绪" : "未就绪"}
               </SettingsBadge>
-              <SettingsBadge>掩码：{state.notificationSettings?.telegram_bot_token_masked ?? "--"}</SettingsBadge>
+              <SettingsBadge tone={state.notificationSettings?.feishu_webhook_url_configured ? "positive" : "warning"}>
+                飞书：{state.notificationSettings?.feishu_enabled ? "已就绪" : "未就绪"}
+              </SettingsBadge>
             </div>
 
+            <h4 className="settings-subtitle">Telegram</h4>
             <div className="settings-field-grid">
               <label>
                 <span>Telegram Bot Token</span>
@@ -374,7 +385,47 @@ export function NotificationSettingsSection(props: { state: NotificationSettings
               </label>
             </div>
 
-            <div className="subtle-callout">真实 token 不会回传前端，只显示掩码。提醒消息会发送到当前 Chat ID。</div>
+            <div className="settings-meta-row">
+              <SettingsBadge>Token 掩码：{state.notificationSettings?.telegram_bot_token_masked ?? "--"}</SettingsBadge>
+            </div>
+
+            <h4 className="settings-subtitle">飞书自定义机器人</h4>
+            <div className="settings-field-grid">
+              <label>
+                <span>飞书 Webhook URL</span>
+                <input
+                  type="password"
+                  value={state.feishuWebhookUrl}
+                  onChange={(event) => state.setFeishuWebhookUrl(event.target.value)}
+                  placeholder={
+                    state.notificationSettings?.feishu_webhook_url_configured
+                      ? "留空则保持当前 Webhook"
+                      : "https://open.feishu.cn/open-apis/bot/v2/hook/..."
+                  }
+                />
+              </label>
+
+              <label>
+                <span>飞书签名 Secret（可选）</span>
+                <input
+                  type="password"
+                  value={state.feishuSecret}
+                  onChange={(event) => state.setFeishuSecret(event.target.value)}
+                  placeholder={state.notificationSettings?.feishu_secret_configured ? "留空则保持当前 Secret" : "未开启签名可留空"}
+                />
+              </label>
+            </div>
+
+            <div className="settings-meta-row">
+              <SettingsBadge>Webhook 掩码：{state.notificationSettings?.feishu_webhook_url_masked ?? "--"}</SettingsBadge>
+              <SettingsBadge>
+                签名 Secret：{state.notificationSettings?.feishu_secret_configured ? "已保存" : "未保存"}
+              </SettingsBadge>
+            </div>
+
+            <div className="subtle-callout">
+              真实 token、Webhook 和 Secret 不会回传前端，只显示掩码。规则提醒会发送到当前已配置的通知通道。
+            </div>
 
             <div className="settings-actions">
               <button type="submit" className="button" disabled={state.saving}>

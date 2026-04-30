@@ -26,13 +26,17 @@ class NotificationSettingsService:
         stored = self.repository.get(db)
         stored_token = stored.telegram_bot_token if stored else ""
         stored_chat_id = stored.telegram_chat_id if stored else ""
+        stored_feishu_webhook_url = stored.feishu_webhook_url if stored else ""
+        stored_feishu_secret = stored.feishu_secret if stored else ""
 
         token = stored_token or self.settings.telegram_bot_token
         chat_id = stored_chat_id or self.settings.telegram_chat_id
+        feishu_webhook_url = stored_feishu_webhook_url or self.settings.feishu_webhook_url
+        feishu_secret = stored_feishu_secret or self.settings.feishu_secret
 
-        if stored_token or stored_chat_id:
+        if stored_token or stored_chat_id or stored_feishu_webhook_url or stored_feishu_secret:
             source = "database"
-        elif token or chat_id:
+        elif token or chat_id or feishu_webhook_url or feishu_secret:
             source = "environment"
         else:
             source = "none"
@@ -42,6 +46,13 @@ class NotificationSettingsService:
             telegram_bot_token_configured=bool(token),
             telegram_bot_token_masked=self._mask_token(token) if token else None,
             telegram_chat_id=chat_id or "",
+            feishu_enabled=bool(feishu_webhook_url),
+            feishu_webhook_url_configured=bool(feishu_webhook_url),
+            feishu_webhook_url_masked=(
+                self._mask_url(feishu_webhook_url) if feishu_webhook_url else None
+            ),
+            feishu_secret_configured=bool(feishu_secret),
+            feishu_secret_masked=self._mask_token(feishu_secret) if feishu_secret else None,
             source=source,
         )
 
@@ -59,6 +70,10 @@ class NotificationSettingsService:
             stored.telegram_bot_token = updates["telegram_bot_token"] or ""
         if "telegram_chat_id" in updates:
             stored.telegram_chat_id = updates["telegram_chat_id"] or ""
+        if "feishu_webhook_url" in updates:
+            stored.feishu_webhook_url = updates["feishu_webhook_url"] or ""
+        if "feishu_secret" in updates:
+            stored.feishu_secret = updates["feishu_secret"] or ""
 
         self.repository.save(db, stored)
         db.commit()
@@ -75,7 +90,21 @@ class NotificationSettingsService:
         chat_id = stored_chat_id or self.settings.telegram_chat_id
         return token, chat_id
 
+    def resolve_feishu_credentials(self, db: Session) -> tuple[str, str]:
+        stored = self.repository.get(db)
+        stored_webhook_url = stored.feishu_webhook_url if stored else ""
+        stored_secret = stored.feishu_secret if stored else ""
+
+        webhook_url = stored_webhook_url or self.settings.feishu_webhook_url
+        secret = stored_secret or self.settings.feishu_secret
+        return webhook_url, secret
+
     def _mask_token(self, token: str) -> str:
         if len(token) <= 10:
             return "*" * len(token)
         return f"{token[:6]}...{token[-4:]}"
+
+    def _mask_url(self, url: str) -> str:
+        if len(url) <= 18:
+            return "*" * len(url)
+        return f"{url[:24]}...{url[-8:]}"

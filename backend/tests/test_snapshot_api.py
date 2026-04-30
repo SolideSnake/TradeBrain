@@ -106,6 +106,13 @@ def test_snapshot_endpoint_returns_cached_snapshot_until_refresh(client):
     assert refresh_payload["from_cache"] is False
     assert refresh_payload["snapshot"]["summary"]["tracked_symbols"] == 2
 
+    events_response = client.get("/api/events")
+    assert events_response.status_code == 200
+    events = events_response.json()
+    assert events[0]["event_type"] == "snapshot.refresh"
+    assert events[0]["status"] == "success"
+    assert events[0]["payload"]["trigger"] == "manual"
+
 
 def test_snapshot_refresh_failure_keeps_previous_snapshot(client, monkeypatch):
     client.post(
@@ -141,6 +148,13 @@ def test_snapshot_refresh_failure_keeps_previous_snapshot(client, monkeypatch):
     assert payload["from_cache"] is True
     assert payload["snapshot"]["summary"]["tracked_symbols"] == 1
     assert "IBKR timeout" in payload["last_error"]
+
+    events_response = client.get("/api/events")
+    assert events_response.status_code == 200
+    events = events_response.json()
+    assert events[0]["event_type"] == "snapshot.refresh"
+    assert events[0]["status"] == "failed"
+    assert "IBKR timeout" in events[0]["message"]
 
 
 def test_snapshot_refresh_returns_cached_payload_when_refresh_already_running(client):
@@ -221,8 +235,14 @@ def test_states_endpoint_returns_persisted_watchlist_states(client):
     assert payload[0]["current_label"] in {"undervalued", "fair", "overvalued"}
 
 
-def test_alerts_endpoint_returns_list(client):
-    response = client.get("/api/alerts")
+def test_events_endpoint_returns_list(client):
+    response = client.get("/api/events")
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_legacy_alerts_endpoint_is_removed(client):
+    response = client.get("/api/alerts")
+
+    assert response.status_code == 404

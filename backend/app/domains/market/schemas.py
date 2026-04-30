@@ -12,6 +12,7 @@ class QuoteSnapshot(BaseModel):
     change_percent: float | None = None
     bid: float | None = None
     ask: float | None = None
+    currency: str = "USD"
     as_of: datetime | None = None
     source: str = "unknown"
 

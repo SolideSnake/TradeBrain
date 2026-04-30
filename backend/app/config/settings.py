@@ -36,6 +36,10 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    feishu_webhook_url: str = ""
+    feishu_secret: str = ""
+    event_retention_days: int = 90
+    event_retention_max_rows: int = 10000
 
     model_config = SettingsConfigDict(
         env_file=PROJECT_ROOT / ".env",

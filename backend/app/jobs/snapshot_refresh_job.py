@@ -61,7 +61,7 @@ class SnapshotRefreshJob:
             if not self._is_due(now, settings.interval_seconds, record):
                 return False
 
-            self.snapshot_cache_service.refresh(db)
+            self.snapshot_cache_service.refresh(db, trigger="automatic")
             return True
 
     def _is_due(self, now: datetime, interval_seconds: int, record) -> bool:

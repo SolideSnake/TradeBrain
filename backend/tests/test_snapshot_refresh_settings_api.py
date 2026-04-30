@@ -55,7 +55,7 @@ def test_snapshot_refresh_job_runs_when_due(client):
         def __init__(self) -> None:
             self.calls = 0
 
-        def refresh(self, db):
+        def refresh(self, db, trigger="manual"):
             self.calls += 1
 
     fake_service = FakeSnapshotCacheService()
@@ -72,6 +72,26 @@ def test_snapshot_refresh_job_runs_when_due(client):
     assert fake_service.calls == 1
 
 
+def test_snapshot_refresh_job_records_automatic_refresh_event(client):
+    client.post("/api/watchlist", json={"symbol": "AAPL"})
+
+    now = datetime.now(timezone.utc)
+    job = SnapshotRefreshJob(
+        session_factory=get_session_factory(),
+        started_at=now - timedelta(seconds=301),
+    )
+
+    did_refresh = job.run_once(now=now)
+
+    assert did_refresh is True
+    response = client.get("/api/events")
+    assert response.status_code == 200
+    event = response.json()[0]
+    assert event["event_type"] == "snapshot.refresh"
+    assert event["status"] == "success"
+    assert event["payload"]["trigger"] == "automatic"
+
+
 def test_snapshot_refresh_job_does_not_run_when_disabled(client):
     client.put(
         "/api/settings/snapshot-refresh",
@@ -85,7 +105,7 @@ def test_snapshot_refresh_job_does_not_run_when_disabled(client):
         def __init__(self) -> None:
             self.calls = 0
 
-        def refresh(self, db):
+        def refresh(self, db, trigger="manual"):
             self.calls += 1
 
     fake_service = FakeSnapshotCacheService()
@@ -107,7 +127,7 @@ def test_snapshot_refresh_job_skips_active_refresh(client):
         def __init__(self) -> None:
             self.calls = 0
 
-        def refresh(self, db):
+        def refresh(self, db, trigger="manual"):
             self.calls += 1
 
     now = datetime.now(timezone.utc)

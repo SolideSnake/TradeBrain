@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.core.types.common import AssetType, Market
 from app.domains.fundamentals.schemas import FundamentalSnapshot
+from app.domains.fx.schemas import FxRateSnapshot
 from app.domains.indicators.schemas import IndicatorSnapshot, PriceReferenceLevels
 from app.domains.market.schemas import QuoteSnapshot
 from app.domains.portfolio.schemas import AccountSnapshot, PositionSnapshot
@@ -58,6 +59,7 @@ class BrokerSnapshotEnvelope(BaseModel):
     quotes: dict[str, QuoteSnapshot]
     reference_levels: dict[str, PriceReferenceLevels]
     fundamentals: dict[str, FundamentalSnapshot]
+    fx_rates: dict[str, FxRateSnapshot] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
 

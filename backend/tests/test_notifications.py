@@ -1,6 +1,5 @@
 from datetime import UTC, datetime
 
-from app.adapters.persistence.sqlite.alert_repository import AlertRepository
 from app.adapters.persistence.sqlite.alert_rule_repository import AlertRuleRepository
 from app.adapters.persistence.sqlite.db import get_session_factory
 from app.application.notifications import NotificationService
@@ -151,7 +150,6 @@ def test_notification_service_sends_and_updates_rule_counters(client):
     notifier = FakeNotifier()
     alert_rule_repository = AlertRuleRepository()
     service = NotificationService(
-        alert_repository=AlertRepository(),
         alert_rule_repository=alert_rule_repository,
         notifier=notifier,
     )
@@ -172,13 +170,13 @@ def test_notification_service_sends_and_updates_rule_counters(client):
 
         events = service.handle_snapshot(session, build_snapshot())
         session.refresh(rule)
-        recent = service.list_recent(session)
+        recent = service.event_service.list_recent(session)
     finally:
         session.close()
 
     assert len(notifier.messages) == 1
     assert len(events) == 1
-    assert events[0].delivery_status == AlertDeliveryStatus.SENT
+    assert events[0].status == AlertDeliveryStatus.SENT
     assert rule.sent_count == 1
     assert rule.failed_count == 0
     assert rule.last_matched is True
@@ -186,11 +184,45 @@ def test_notification_service_sends_and_updates_rule_counters(client):
     assert recent[0].symbol == "NVDA"
 
 
+def test_notification_service_can_send_rule_to_feishu(client):
+    notifier = FakeNotifier()
+    alert_rule_repository = AlertRuleRepository()
+    service = NotificationService(
+        alert_rule_repository=alert_rule_repository,
+        feishu_notifier=notifier,
+    )
+    session = get_session_factory()()
+
+    try:
+        rule = alert_rule_repository.create(
+            session,
+            AlertRuleCreate(
+                name="NVDA 52W 回撤提醒",
+                source=AlertRuleSource.WATCHLIST,
+                symbol="NVDA",
+                metric=AlertRuleMetric.DRAWDOWN_52W,
+                operator=AlertRuleOperator.ABOVE,
+                threshold_value="5",
+            ),
+        )
+
+        events = service.handle_snapshot(session, build_snapshot())
+        session.refresh(rule)
+    finally:
+        session.close()
+
+    assert len(notifier.messages) == 1
+    assert len(events) == 1
+    assert events[0].payload["channel"] == "feishu"
+    assert events[0].status == AlertDeliveryStatus.SENT
+    assert rule.sent_count == 1
+    assert rule.failed_count == 0
+
+
 def test_notification_service_suppresses_repeated_edge_rule(client):
     notifier = FakeNotifier()
     alert_rule_repository = AlertRuleRepository()
     service = NotificationService(
-        alert_repository=AlertRepository(),
         alert_rule_repository=alert_rule_repository,
         notifier=notifier,
     )
@@ -226,7 +258,6 @@ def test_notification_service_records_failed_rule_delivery(client):
     notifier = FakeNotifier(should_fail=True)
     alert_rule_repository = AlertRuleRepository()
     service = NotificationService(
-        alert_repository=AlertRepository(),
         alert_rule_repository=alert_rule_repository,
         notifier=notifier,
     )
@@ -250,7 +281,7 @@ def test_notification_service_records_failed_rule_delivery(client):
         session.close()
 
     assert len(events) == 1
-    assert events[0].delivery_status == AlertDeliveryStatus.FAILED
+    assert events[0].status == AlertDeliveryStatus.FAILED
     assert rule.sent_count == 0
     assert rule.failed_count == 1
     assert "telegram offline" in rule.last_error
@@ -278,7 +309,7 @@ def test_notification_service_can_send_test_notification_and_log_event(client):
         session.commit()
 
         result = service.send_test_notification(session)
-        recent = service.list_recent(session)
+        recent = service.event_service.list_recent(session)
     finally:
         session.close()
 

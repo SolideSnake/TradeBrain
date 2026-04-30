@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.adapters.persistence.sqlite.db import get_db
 from app.application.alert_rule_service import AlertRuleService
+from app.application.event_service import EventService
 from app.application.ibkr_settings_service import IBKRSettingsService
 from app.application.notification_settings_service import NotificationSettingsService
 from app.application.notifications import NotificationService
@@ -21,7 +22,7 @@ from app.domains.alerting.schemas import (
     AlertRuleRead,
     AlertRuleUpdate,
 )
-from app.domains.alerts.schemas import AlertEventRead
+from app.domains.events.schemas import EventRecordRead
 from app.domains.preferences.schemas import (
     IBKRConnectionTestRequest,
     IBKRConnectionTestResult,
@@ -48,7 +49,9 @@ watchlist_service = WatchlistService()
 state_engine = StateEngine()
 alert_rule_service = AlertRuleService()
 notification_settings_service = NotificationSettingsService()
+event_service = EventService()
 notification_service = NotificationService(
+    event_service=event_service,
     notification_settings_service=notification_settings_service
 )
 ibkr_settings_service = IBKRSettingsService()
@@ -56,7 +59,8 @@ snapshot_pipeline_service = SnapshotPipelineService(
     notification_service=notification_service
 )
 snapshot_cache_service = SnapshotCacheService(
-    snapshot_pipeline_service=snapshot_pipeline_service
+    snapshot_pipeline_service=snapshot_pipeline_service,
+    event_service=event_service,
 )
 scanner_service = ScannerApplicationService(
     snapshot_pipeline_service=snapshot_pipeline_service
@@ -95,9 +99,12 @@ def scan_latest_snapshot(db: Session = Depends(get_db)) -> ScannerResult:
     return scanner_service.scan_latest(db)
 
 
-@router.get("/api/alerts", response_model=list[AlertEventRead])
-def list_alerts(db: Session = Depends(get_db)) -> list[AlertEventRead]:
-    return notification_service.list_recent(db)
+@router.get("/api/events", response_model=list[EventRecordRead])
+def list_events(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> list[EventRecordRead]:
+    return event_service.list_recent(db, limit)
 
 
 @router.get("/api/alert-rules", response_model=list[AlertRuleRead])

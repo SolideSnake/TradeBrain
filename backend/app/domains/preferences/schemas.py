@@ -10,8 +10,10 @@ from app.core.types.common import AlertDeliveryStatus
 class NotificationSettingsUpdate(BaseModel):
     telegram_bot_token: str | None = Field(default=None, max_length=4096)
     telegram_chat_id: str | None = Field(default=None, max_length=128)
+    feishu_webhook_url: str | None = Field(default=None, max_length=4096)
+    feishu_secret: str | None = Field(default=None, max_length=4096)
 
-    @field_validator("telegram_bot_token", "telegram_chat_id")
+    @field_validator("telegram_bot_token", "telegram_chat_id", "feishu_webhook_url", "feishu_secret")
     @classmethod
     def trim_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -24,6 +26,11 @@ class NotificationSettingsRead(BaseModel):
     telegram_bot_token_configured: bool
     telegram_bot_token_masked: str | None = None
     telegram_chat_id: str = ""
+    feishu_enabled: bool
+    feishu_webhook_url_configured: bool
+    feishu_webhook_url_masked: str | None = None
+    feishu_secret_configured: bool
+    feishu_secret_masked: str | None = None
     source: Literal["database", "environment", "none"]
 
 

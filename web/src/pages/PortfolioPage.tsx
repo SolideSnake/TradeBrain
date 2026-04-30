@@ -1,9 +1,8 @@
-import { type ReactNode, useMemo } from "react";
+import { type CSSProperties, type ReactNode, useMemo } from "react";
 
 import { useSnapshotResource } from "../hooks/useSnapshotResource";
 import { type CanonicalSnapshot, type PositionSnapshot } from "../shared/api";
 import { formatCurrency, formatDateTime, formatPercent } from "../shared/formatters";
-import { formatSnapshotCacheStatus } from "../shared/snapshotStatus";
 
 const PIE_COLORS = ["#4f7eff", "#4fd46b", "#f0b35f", "#f06f82", "#8f7dff", "#42cbd4"];
 
@@ -14,20 +13,38 @@ interface PieSlice {
   color: string;
 }
 
+type FundsTone = "positive" | "negative" | "neutral";
+
 function toneClass(value: number | null) {
   if (value === null || value === 0) {
     return "value-neutral";
   }
 
-  return value > 0 ? "value-positive" : "value-negative";
+  return value > 0 ? "market-value-positive" : "market-value-negative";
 }
 
-function cashRatioLabel(availableFunds: number | null, netLiquidation: number | null) {
-  if (availableFunds === null || netLiquidation === null || netLiquidation <= 0) {
+function ratioLabel(value: number | null | undefined, base: number | null | undefined) {
+  if (value === null || value === undefined || base === null || base === undefined || base <= 0) {
     return "--";
   }
 
-  return formatPlainPercent((availableFunds / netLiquidation) * 100, 1);
+  return formatPlainPercent((value / base) * 100, 1);
+}
+
+function fundsTone(value: number | null | undefined): FundsTone {
+  if (value === null || value === undefined || value === 0) {
+    return "neutral";
+  }
+
+  return value > 0 ? "positive" : "negative";
+}
+
+function fundsLevelPercent(value: number | null | undefined, base: number | null | undefined) {
+  if (value === null || value === undefined || value === 0 || base === null || base === undefined || base <= 0) {
+    return "0%";
+  }
+
+  return `${Math.min(Math.abs(value / base) * 100, 100).toFixed(1)}%`;
 }
 
 function formatPlainPercent(value: number | null, digits = 1) {
@@ -48,13 +65,71 @@ function brokerStatusLabel(status: CanonicalSnapshot["meta"]["broker_status"]) {
   return "模拟";
 }
 
-function buildPositionSlices(positions: PositionSnapshot[], currency: string): PieSlice[] {
+function baseAmount(
+  baseValue: number | null | undefined,
+  nativeValue: number | null | undefined,
+  nativeCurrency: string,
+  baseCurrency: string,
+) {
+  if (baseValue !== null && baseValue !== undefined) {
+    return baseValue;
+  }
+  return nativeCurrency === baseCurrency ? (nativeValue ?? null) : null;
+}
+
+function formatBaseAndNative(
+  baseValue: number | null | undefined,
+  nativeValue: number | null | undefined,
+  nativeCurrency: string,
+  baseCurrency: string,
+  options: { digits?: number } = { digits: 2 },
+) {
+  const normalizedNative = nativeCurrency || baseCurrency;
+  const resolvedBase = baseAmount(baseValue, nativeValue, normalizedNative, baseCurrency);
+  const baseLabel = formatCurrency(resolvedBase, baseCurrency, options);
+
+  if (normalizedNative === baseCurrency || nativeValue === null || nativeValue === undefined) {
+    return baseLabel;
+  }
+
+  return `${baseLabel} / ${formatCurrency(nativeValue, normalizedNative, options)}`;
+}
+
+function NativeSubline(props: {
+  baseValue: number | null | undefined;
+  nativeValue: number | null | undefined;
+  nativeCurrency: string;
+  baseCurrency: string;
+}) {
+  if (
+    props.nativeCurrency === props.baseCurrency ||
+    props.nativeValue === null ||
+    props.nativeValue === undefined
+  ) {
+    return null;
+  }
+
+  return <span className="muted">{formatCurrency(props.nativeValue, props.nativeCurrency, { digits: 2 })}</span>;
+}
+
+function buildPositionSlices(positions: PositionSnapshot[], baseCurrency: string): PieSlice[] {
   const rankedPositions = positions
-    .map((position) => ({
-      label: position.symbol,
-      value: Math.abs(position.market_value ?? 0),
-      marketValue: position.market_value,
-    }))
+    .map((position) => {
+      const value = baseAmount(
+        position.market_value_base,
+        position.market_value,
+        position.currency,
+        baseCurrency,
+      );
+
+      return {
+        label: position.symbol,
+        value: Math.abs(value ?? 0),
+        marketValue: position.market_value,
+        marketValueBase: value,
+        currency: position.currency,
+      };
+    })
     .filter((position) => position.value > 0)
     .sort((left, right) => right.value - left.value);
 
@@ -63,7 +138,12 @@ function buildPositionSlices(positions: PositionSnapshot[], currency: string): P
   const slices = topPositions.map((position, index) => ({
     label: position.label,
     value: position.value,
-    detail: formatCurrency(position.marketValue, currency, { digits: 2 }),
+    detail: formatBaseAndNative(
+      position.marketValueBase,
+      position.marketValue,
+      position.currency,
+      baseCurrency,
+    ),
     color: PIE_COLORS[index % PIE_COLORS.length],
   }));
 
@@ -72,7 +152,7 @@ function buildPositionSlices(positions: PositionSnapshot[], currency: string): P
     slices.push({
       label: `其他 ${otherPositions.length} 项`,
       value: otherValue,
-      detail: formatCurrency(otherValue, currency, { digits: 2 }),
+      detail: formatCurrency(otherValue, baseCurrency, { digits: 2 }),
       color: PIE_COLORS[5],
     });
   }
@@ -85,28 +165,18 @@ function PortfolioKpiCard(props: {
   value: ReactNode;
   note: ReactNode;
   tone?: "default" | "positive" | "danger";
-  sideLabel?: string;
-  sideValue?: ReactNode;
-  headerAction?: ReactNode;
 }) {
   const toneClassName =
-    props.tone === "positive" ? " value-positive" : props.tone === "danger" ? " value-negative" : "";
+    props.tone === "positive"
+      ? " market-value-positive"
+      : props.tone === "danger"
+        ? " market-value-negative"
+        : "";
 
   return (
     <article className="panel portfolio-kpi-card">
       <div className="portfolio-kpi-top">
         <p className="stat-label">{props.label}</p>
-        {props.headerAction || props.sideLabel ? (
-          <div className="portfolio-kpi-actions">
-            {props.headerAction}
-            {props.sideLabel ? (
-              <div className="portfolio-kpi-side">
-                <span>{props.sideLabel}</span>
-                <strong>{props.sideValue}</strong>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
       </div>
       <p className={`metric metric-compact${toneClassName}`}>{props.value}</p>
       <p className="panel-note">{props.note}</p>
@@ -114,68 +184,76 @@ function PortfolioKpiCard(props: {
   );
 }
 
-function AccountSummaryBadge(props: {
-  accountId: string;
-  positionCount: number;
-  investedValue: number;
+function PortfolioFundsItem(props: {
+  label: string;
+  value: number | null | undefined;
+  netLiquidation: number | null | undefined;
   currency: string;
-  source: string;
-  cacheStatus: string;
-  updatedAt: string | null;
 }) {
+  const tone = fundsTone(props.value);
+  const direction = tone === "negative" ? "down" : "up";
+  const style = { "--funds-level": fundsLevelPercent(props.value, props.netLiquidation) } as CSSProperties;
+
   return (
-    <div className="account-badge-wrap">
-      <span className="account-badge" tabIndex={0} aria-label="账户概览">
-        <span>账户</span>
-        <span className="account-badge-separator" aria-hidden="true">
-          ·
-        </span>
-        <strong>{props.accountId || "--"}</strong>
-      </span>
-      <div className="account-badge-popover" role="tooltip">
-        <div className="kv-row">
-          <span className="kv-label">持仓数量</span>
-          <span className="kv-value">{props.positionCount}</span>
-        </div>
-        <div className="kv-row">
-          <span className="kv-label">总市值</span>
-          <span className="kv-value">{formatCurrency(props.investedValue, props.currency, { digits: 2 })}</span>
-        </div>
-        <div className="kv-row">
-          <span className="kv-label">数据来源</span>
-          <span className="kv-value">{props.source}</span>
-        </div>
-        <div className="kv-row">
-          <span className="kv-label">缓存状态</span>
-          <span className="kv-value">{props.cacheStatus}</span>
-        </div>
-        <div className="kv-row">
-          <span className="kv-label">账户更新时间</span>
-          <span className="kv-value">{formatDateTime(props.updatedAt)}</span>
-        </div>
+    <div className={`portfolio-funds-item portfolio-funds-item-${tone} portfolio-funds-item-${direction}`} style={style}>
+      <span className="portfolio-funds-level" aria-hidden="true" />
+      <div className="portfolio-funds-content">
+        <span>{props.label}</span>
+        <strong>{formatCurrency(props.value, props.currency)}</strong>
+        <small>
+          {props.label}/净值 {ratioLabel(props.value, props.netLiquidation)}
+        </small>
       </div>
     </div>
   );
 }
 
+function PortfolioFundsCard(props: {
+  cashBalance: number | null | undefined;
+  availableFunds: number | null | undefined;
+  netLiquidation: number | null | undefined;
+  currency: string;
+}) {
+  return (
+    <article className="panel portfolio-kpi-card portfolio-funds-card">
+      <div className="portfolio-funds-stack">
+        <PortfolioFundsItem
+          label="现金"
+          value={props.cashBalance}
+          netLiquidation={props.netLiquidation}
+          currency={props.currency}
+        />
+        <PortfolioFundsItem
+          label="可用资金"
+          value={props.availableFunds}
+          netLiquidation={props.netLiquidation}
+          currency={props.currency}
+        />
+      </div>
+    </article>
+  );
+}
+
 function PortfolioPieChart(props: {
   title: string;
-  description: string;
+  description?: string;
   slices: PieSlice[];
   emptyMessage: string;
   centerValue?: ReactNode;
   centerLabel?: string;
+  variant?: "default" | "featured";
 }) {
   const total = props.slices.reduce((sum, slice) => sum + slice.value, 0);
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
+  const variantClassName = props.variant === "featured" ? " portfolio-chart-card-featured" : "";
 
   return (
-    <article className="panel portfolio-chart-card">
+    <article className={`panel portfolio-chart-card${variantClassName}`}>
       <div>
         <h3>{props.title}</h3>
-        <p className="panel-note">{props.description}</p>
+        {props.description ? <p className="panel-note">{props.description}</p> : null}
       </div>
 
       {props.slices.length === 0 || total <= 0 ? (
@@ -227,24 +305,36 @@ function PortfolioPieChart(props: {
 }
 
 export function PortfolioPage() {
-  const { snapshot, snapshotResponse, loading, error } = useSnapshotResource({
+  const { snapshot, loading, error } = useSnapshotResource({
     loadErrorMessage: "Failed to load portfolio snapshot.",
   });
 
   const totals = useMemo(() => {
     const positions = snapshot?.positions ?? [];
-    const investedValue = positions.reduce((sum, position) => sum + (position.market_value ?? 0), 0);
-    const unrealizedPnl = positions.reduce((sum, position) => sum + (position.unrealized_pnl ?? 0), 0);
+    const accountCurrency = snapshot?.account.currency ?? "USD";
+    const unrealizedPnl = positions.reduce(
+      (sum, position) =>
+        sum +
+        (baseAmount(
+          position.unrealized_pnl_base,
+          position.unrealized_pnl,
+          position.currency,
+          accountCurrency,
+        ) ?? 0),
+      0,
+    );
 
     return {
       count: positions.length,
-      investedValue,
       unrealizedPnl,
     };
   }, [snapshot]);
 
   const currency = snapshot?.account.currency ?? "USD";
-  const positionSlices = useMemo(() => buildPositionSlices(snapshot?.positions ?? [], currency), [currency, snapshot?.positions]);
+  const positionSlices = useMemo(
+    () => buildPositionSlices(snapshot?.positions ?? [], currency),
+    [currency, snapshot?.positions],
+  );
 
   return (
     <section>
@@ -258,23 +348,13 @@ export function PortfolioPage() {
               <PortfolioKpiCard
                 label="净值"
                 value={formatCurrency(snapshot.account.net_liquidation, currency)}
-                headerAction={
-                  <AccountSummaryBadge
-                    accountId={snapshot.account.account_id}
-                    positionCount={totals.count}
-                    investedValue={totals.investedValue}
-                    currency={currency}
-                    source={snapshot.meta.broker_display_name}
-                    cacheStatus={formatSnapshotCacheStatus(snapshotResponse)}
-                    updatedAt={snapshot.account.updated_at}
-                  />
-                }
                 note={`${snapshot.meta.broker_display_name} / ${brokerStatusLabel(snapshot.meta.broker_status)}`}
               />
-              <PortfolioKpiCard
-                label="现金"
-                value={formatCurrency(snapshot.account.available_funds, currency)}
-                note={`现金占资产 ${cashRatioLabel(snapshot.account.available_funds, snapshot.account.net_liquidation)}`}
+              <PortfolioFundsCard
+                cashBalance={snapshot.account.cash_balance}
+                availableFunds={snapshot.account.available_funds}
+                netLiquidation={snapshot.account.net_liquidation}
+                currency={currency}
               />
               <PortfolioKpiCard
                 label="未实现盈亏"
@@ -288,11 +368,11 @@ export function PortfolioPage() {
             <div className="portfolio-chart-grid overview-secondary">
               <PortfolioPieChart
                 title="当前持仓"
-                description="按持仓市值占比展示，便于快速判断仓位集中度。"
                 slices={positionSlices}
                 emptyMessage="当前快照里没有可用于绘图的持仓。"
                 centerValue={totals.count}
                 centerLabel="持仓"
+                variant="featured"
               />
               <PortfolioPieChart
                 title="目标持仓"
@@ -306,7 +386,7 @@ export function PortfolioPage() {
 
             <article className="table-shell overview-secondary">
               <div className="table-row table-head table-positions">
-                <span>标的</span>
+                <span>代码</span>
                 <span>数量</span>
                 <span>成本价</span>
                 <span>现价</span>
@@ -322,11 +402,46 @@ export function PortfolioPage() {
                   <div key={`${position.account_id}-${position.symbol}`} className="table-row table-positions">
                     <span className="symbol-cell">{position.symbol}</span>
                     <span>{position.quantity}</span>
-                    <span>{formatCurrency(position.average_cost, currency, { digits: 2 })}</span>
-                    <span>{formatCurrency(position.market_price, currency, { digits: 2 })}</span>
-                    <span>{formatCurrency(position.market_value, currency, { digits: 2 })}</span>
-                    <span className={toneClass(position.unrealized_pnl)}>
-                      {formatCurrency(position.unrealized_pnl, currency, { digits: 2 })}
+                    <span>{formatCurrency(position.average_cost, position.currency, { digits: 2 })}</span>
+                    <span>{formatCurrency(position.market_price, position.currency, { digits: 2 })}</span>
+                    <span className="cell-stack">
+                      <span>
+                        {formatCurrency(
+                          baseAmount(position.market_value_base, position.market_value, position.currency, currency),
+                          currency,
+                          { digits: 2 },
+                        )}
+                      </span>
+                      <NativeSubline
+                        baseValue={position.market_value_base}
+                        nativeValue={position.market_value}
+                        nativeCurrency={position.currency}
+                        baseCurrency={currency}
+                      />
+                    </span>
+                    <span
+                      className={`cell-stack ${toneClass(
+                        baseAmount(position.unrealized_pnl_base, position.unrealized_pnl, position.currency, currency),
+                      )}`}
+                    >
+                      <span>
+                        {formatCurrency(
+                          baseAmount(
+                            position.unrealized_pnl_base,
+                            position.unrealized_pnl,
+                            position.currency,
+                            currency,
+                          ),
+                          currency,
+                          { digits: 2 },
+                        )}
+                      </span>
+                      <NativeSubline
+                        baseValue={position.unrealized_pnl_base}
+                        nativeValue={position.unrealized_pnl}
+                        nativeCurrency={position.currency}
+                        baseCurrency={currency}
+                      />
                     </span>
                     <span className={toneClass(position.unrealized_pnl_percent)}>
                       {formatPercent(position.unrealized_pnl_percent)}

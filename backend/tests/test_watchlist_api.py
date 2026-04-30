@@ -50,6 +50,16 @@ def test_watchlist_create_accepts_symbol_only(client):
     assert created["in_position"] is False
 
 
+def test_watchlist_create_infers_korean_market_for_six_digit_symbol(client):
+    create_response = client.post("/api/watchlist", json={"symbol": "000660"})
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["symbol"] == "000660"
+    assert created["name"] == "SK hynix Inc."
+    assert created["market"] == "KR"
+
+
 def test_watchlist_create_uses_symbol_as_unknown_name_fallback(client):
     create_response = client.post("/api/watchlist", json={"symbol": "xyzq"})
 

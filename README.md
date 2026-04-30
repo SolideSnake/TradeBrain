@@ -1,6 +1,6 @@
 # TradeBrain
 
-TradeBrain 是一个本地优先的辅助交易工作台，用来监控自选标的、读取 IBKR 账户数据、计算一小组高信号指标、基于 PEG 打估值标签，并在状态变化时发送 Telegram 预警。
+TradeBrain 是一个本地优先的辅助交易工作台，用来监控自选标的、读取 IBKR 账户数据、计算一小组高信号指标、基于 PEG 打估值标签，并在状态变化时发送 Telegram / 飞书预警。
 
 第一版 MVP 已于 `2026-04-17` 完成，当前仓库已进入 `MVP v1 完成后的稳定化与下一阶段规划`。截至 `2026-04-27`，项目已经补齐快照缓存、提醒规则 v1、IBKR 真实/模拟 profile 切换、策略线索扫描、追踪页区间位置展示和刷新防卡住保护。
 
@@ -13,6 +13,7 @@ TradeBrain 是一个本地优先的辅助交易工作台，用来监控自选标
 - PEG 估值标签：`低估 / 合理 / 高估`
 - 状态变化检测
 - Telegram 预警
+- 飞书自定义机器人通知
 - Web 看板
 - 可配置提醒规则
 - 策略线索扫描
@@ -195,6 +196,8 @@ IBKR_REQUEST_TIMEOUT_SECONDS=12.0
 
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+FEISHU_WEBHOOK_URL=
+FEISHU_SECRET=
 ```
 
 说明：
@@ -204,6 +207,7 @@ TELEGRAM_CHAT_ID=
 - `IBKR_ACTIVE_PROFILE=paper` 使用模拟 TWS，默认端口 `7497`；`real` 使用真实 TWS，默认端口 `7496`。
 - 更推荐在前端 `Settings` 页面保存和切换 IBKR 配置；同一时间只会激活真实或模拟中的一个。
 - Telegram 配置更推荐在前端 `Settings` 页面里填写，由后端本地保存，不建议长期直接写在 `.env`。
+- 飞书配置使用自定义机器人 Webhook；如果机器人安全设置开启“签名校验”，同时填写 `FEISHU_SECRET` 或在 `Settings` 页面保存 Secret。
 
 ## 当前页面
 
@@ -211,7 +215,7 @@ TELEGRAM_CHAT_ID=
 - `Monitor`：watchlist、行情指标、52W/90D 区间位置、PEG、估值标签、状态变化、策略线索
 - `Alerts`：提醒规则管理、发送成功/失败/抑制统计
 - `Portfolio`：账户余额、持仓、浮盈亏
-- `Settings`：IBKR 真实/模拟 TWS 配置、快照自动刷新、Telegram 配置与测试发送
+- `Settings`：IBKR 真实/模拟 TWS 配置、快照自动刷新、Telegram / 飞书配置与测试发送
 
 ## 当前后端 API
 
@@ -224,7 +228,7 @@ TELEGRAM_CHAT_ID=
 - `POST /api/snapshot/refresh`：手动刷新快照，失败时保留旧快照
 - `GET /api/states`
 - `GET /api/scanner`
-- `GET /api/alerts`
+- `GET /api/events`：读取全局事件时间线
 - `GET /api/alert-rules`
 - `POST /api/alert-rules`
 - `PATCH /api/alert-rules/{rule_id}`
@@ -248,6 +252,7 @@ TELEGRAM_CHAT_ID=
 - 页面仍然优先读取最近一次成功快照，刷新失败不会清空旧数据。
 - 手动刷新如果遇到 TWS 刚启动、端口未就绪或 IBKR 请求过慢，会在前端超时提示并保留旧数据。
 - 后端同一时间只允许一轮快照刷新，避免自动刷新和手动刷新互相叠加。
+- 每次快照刷新都会写入一条事件；事件默认保留 `90 天`，最多 `10000 条`。
 
 ## 追踪页指标说明
 
@@ -282,7 +287,17 @@ TELEGRAM_CHAT_ID=
 2. 保存 Telegram Bot Token 和 Chat ID
 3. 点击 `Send Test Message`
 4. 确认 Telegram 收到消息
-5. 确认 `Alerts` 页面出现对应测试记录
+5. 确认 `Overview` 的事件卡片出现对应测试记录
+
+### 飞书联调验收
+
+1. 在飞书群里添加“自定义机器人”
+2. 复制机器人 Webhook URL
+3. 如果启用了签名校验，同时复制签名 Secret
+4. 打开 `Settings`
+5. 保存飞书 Webhook URL 和可选 Secret
+6. 点击 `发送测试消息`
+7. 确认飞书群收到 TradeBrain 测试消息
 
 ## 测试命令
 
@@ -305,8 +320,8 @@ npm run build
 - 当前 TradeBrain 是监控和提醒工具，不是自动下单系统。
 - 当前状态引擎是 PEG 驱动的轻量版。
 - 正确数据库位置应为 [tradebrain.db](D:\code\TradeBrain\backend\tradebrain.db)。
-- 不要把 Telegram Bot Token 发到聊天记录里，也不要提交进仓库。
-- 换电脑如果不迁移本地数据库，项目仍可运行，但 watchlist、提醒规则、IBKR/Telegram 页面配置需要重新填写。
+- 不要把 Telegram Bot Token、飞书 Webhook 或飞书 Secret 发到聊天记录里，也不要提交进仓库。
+- 换电脑如果不迁移本地数据库，项目仍可运行，但 watchlist、提醒规则、IBKR/Telegram/飞书页面配置需要重新填写。
 
 ## 相关文档
 

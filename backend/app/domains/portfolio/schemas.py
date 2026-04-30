@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 class AccountSnapshot(BaseModel):
     account_id: str = ""
     net_liquidation: float | None = None
+    cash_balance: float | None = None
+    settled_cash: float | None = None
     available_funds: float | None = None
     buying_power: float | None = None
     currency: str = "USD"
@@ -24,6 +26,12 @@ class PositionSnapshot(BaseModel):
     unrealized_pnl: float | None = None
     unrealized_pnl_percent: float | None = None
     currency: str = "USD"
+    base_currency: str = "USD"
+    fx_rate_to_base: float | None = None
+    average_cost_base: float | None = None
+    market_price_base: float | None = None
+    market_value_base: float | None = None
+    unrealized_pnl_base: float | None = None
     account_id: str = ""
 
     @field_validator("symbol")

@@ -37,7 +37,7 @@ export function AlertRuleDialog(props: {
         <div className="modal-header">
           <div>
             <h2>新增提醒规则</h2>
-            <p>先选模板，再填少量参数。规则命中后会通过 Telegram 推送。</p>
+            <p>先选模板，再填少量参数。规则命中后会通过已配置的通知通道推送。</p>
           </div>
           <button type="button" className="button button-secondary" onClick={props.onClose}>
             关闭

@@ -29,6 +29,8 @@ export interface NotificationSettingsSectionState {
   notificationSettings: NotificationSettings | null;
   telegramBotToken: string;
   telegramChatId: string;
+  feishuWebhookUrl: string;
+  feishuSecret: string;
   loading: boolean;
   saving: boolean;
   testing: boolean;
@@ -36,6 +38,8 @@ export interface NotificationSettingsSectionState {
   success: string | null;
   setTelegramBotToken: (value: string) => void;
   setTelegramChatId: (value: string) => void;
+  setFeishuWebhookUrl: (value: string) => void;
+  setFeishuSecret: (value: string) => void;
   reload: () => Promise<void>;
   handleSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   handleTestSend: () => Promise<void>;
@@ -84,6 +88,8 @@ export function useNotificationSettingsSection(): NotificationSettingsSectionSta
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [telegramBotToken, setTelegramBotToken] = useState("");
   const [telegramChatId, setTelegramChatId] = useState("");
+  const [feishuWebhookUrl, setFeishuWebhookUrl] = useState("");
+  const [feishuSecret, setFeishuSecret] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -97,6 +103,8 @@ export function useNotificationSettingsSection(): NotificationSettingsSectionSta
       setNotificationSettings(nextSettings);
       setTelegramBotToken("");
       setTelegramChatId(nextSettings.telegram_chat_id);
+      setFeishuWebhookUrl("");
+      setFeishuSecret("");
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load notification settings.");
@@ -116,27 +124,40 @@ export function useNotificationSettingsSection(): NotificationSettingsSectionSta
       setSuccess(null);
 
       try {
-        const payload: { telegram_bot_token?: string; telegram_chat_id?: string } = {
+        const payload: {
+          telegram_bot_token?: string;
+          telegram_chat_id?: string;
+          feishu_webhook_url?: string;
+          feishu_secret?: string;
+        } = {
           telegram_chat_id: telegramChatId,
         };
 
         if (telegramBotToken.trim() !== "") {
           payload.telegram_bot_token = telegramBotToken.trim();
         }
+        if (feishuWebhookUrl.trim() !== "") {
+          payload.feishu_webhook_url = feishuWebhookUrl.trim();
+        }
+        if (feishuSecret.trim() !== "") {
+          payload.feishu_secret = feishuSecret.trim();
+        }
 
         const nextSettings = await updateNotificationSettings(payload);
         setNotificationSettings(nextSettings);
         setTelegramBotToken("");
         setTelegramChatId(nextSettings.telegram_chat_id);
+        setFeishuWebhookUrl("");
+        setFeishuSecret("");
         setError(null);
-        setSuccess("Telegram 配置已保存到后端。");
+        setSuccess("通知配置已保存到后端。");
       } catch (saveError) {
         setError(saveError instanceof Error ? saveError.message : "Failed to save notification settings.");
       } finally {
         setSaving(false);
       }
     },
-    [telegramBotToken, telegramChatId],
+    [feishuSecret, feishuWebhookUrl, telegramBotToken, telegramChatId],
   );
 
   const handleTestSend = useCallback(async () => {
@@ -162,6 +183,8 @@ export function useNotificationSettingsSection(): NotificationSettingsSectionSta
     notificationSettings,
     telegramBotToken,
     telegramChatId,
+    feishuWebhookUrl,
+    feishuSecret,
     loading,
     saving,
     testing,
@@ -169,6 +192,8 @@ export function useNotificationSettingsSection(): NotificationSettingsSectionSta
     success,
     setTelegramBotToken,
     setTelegramChatId,
+    setFeishuWebhookUrl,
+    setFeishuSecret,
     reload,
     handleSubmit,
     handleTestSend,

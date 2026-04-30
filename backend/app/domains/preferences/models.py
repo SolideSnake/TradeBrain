@@ -18,6 +18,8 @@ class NotificationSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     telegram_bot_token: Mapped[str] = mapped_column(Text, nullable=False, default="")
     telegram_chat_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    feishu_webhook_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    feishu_secret: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

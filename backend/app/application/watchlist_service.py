@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.adapters.persistence.sqlite.watchlist_repository import WatchlistRepository
+from app.core.types.common import Market
 from app.domains.watchlist.models import WatchlistEntry
 from app.domains.watchlist.schemas import WatchlistEntryCreate, WatchlistEntryUpdate
 
@@ -23,6 +24,7 @@ SYMBOL_NAME_OVERRIDES = {
     "TLT": "iShares 20+ Year Treasury Bond ETF",
     "TSLA": "Tesla, Inc.",
     "VOO": "Vanguard S&P 500 ETF",
+    "000660": "SK hynix Inc.",
 }
 
 
@@ -34,6 +36,8 @@ class WatchlistService:
         return self.repository.list(db)
 
     def create_entry(self, db: Session, payload: WatchlistEntryCreate) -> WatchlistEntry:
+        if "market" not in payload.model_fields_set:
+            payload.market = self._infer_market(payload.symbol)
         payload.name = self._resolve_display_name(payload.symbol, payload.name)
         return self.repository.create(db, payload)
 
@@ -56,4 +60,9 @@ class WatchlistService:
         if submitted_name:
             return submitted_name
         return SYMBOL_NAME_OVERRIDES.get(symbol, symbol)
+
+    def _infer_market(self, symbol: str) -> Market:
+        if symbol.isdigit() and len(symbol) == 6:
+            return Market.KR
+        return Market.US
 
