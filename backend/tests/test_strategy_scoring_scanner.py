@@ -50,7 +50,12 @@ def build_item(
 def build_snapshot(items: list[CanonicalWatchlistItem]) -> CanonicalSnapshot:
     now = datetime.now(UTC)
     return CanonicalSnapshot(
-        meta=SnapshotMeta(generated_at=now, broker_mode="mock", broker_status="mock"),
+        meta=SnapshotMeta(
+            generated_at=now,
+            broker_mode="live",
+            broker_status="connected",
+            broker_profile="paper",
+        ),
         summary=SnapshotSummary(
             tracked_symbols=len(items),
             enabled_symbols=len(items),
@@ -63,7 +68,7 @@ def build_snapshot(items: list[CanonicalWatchlistItem]) -> CanonicalSnapshot:
             net_liquidation=100000,
             available_funds=50000,
             buying_power=100000,
-            source="mock",
+            source="test",
             updated_at=now,
         ),
         watchlist=items,

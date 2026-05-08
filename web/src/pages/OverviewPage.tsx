@@ -1,17 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useSnapshotResource } from "../hooks/useSnapshotResource";
-import { type CanonicalSnapshot, type EventRecord, listEvents } from "../shared/api";
-
-type TrendRange = "1D" | "1W" | "1M" | "YTD";
+import {
+  type CanonicalSnapshot,
+  type EventRecord,
+  type PortfolioHistoryPoint,
+  type PortfolioHistoryRange,
+  listEvents,
+  listPortfolioHistory,
+} from "../shared/api";
+import { formatCurrency, formatPercent } from "../shared/formatters";
 
 interface AssetTrendPoint {
   timestamp: string;
   value: number;
 }
 
-const TREND_RANGES: TrendRange[] = ["1D", "1W", "1M", "YTD"];
+const TREND_RANGES: PortfolioHistoryRange[] = ["1D", "1W", "1M", "YTD"];
 const EVENT_LIMIT = 50;
+const TREND_VIEWBOX = {
+  width: 720,
+  height: 260,
+  paddingTop: 26,
+  paddingRight: 96,
+  paddingBottom: 38,
+  paddingLeft: 26,
+};
 
 function environmentLabel(snapshot: CanonicalSnapshot | null) {
   if (!snapshot) {
@@ -26,30 +40,98 @@ function formatShortTime(value: string | null) {
     return "--";
   }
 
-  return new Intl.DateTimeFormat("zh-HK", {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--";
+  }
+
+  const now = new Date();
+  const isSameDay = date.toDateString() === now.toDateString();
+  const time = new Intl.DateTimeFormat("zh-HK", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).format(new Date(value));
+  }).format(date);
+
+  if (isSameDay) {
+    return `今天 ${time}`;
+  }
+
+  return new Intl.DateTimeFormat("zh-HK", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
-function buildLinePath(points: AssetTrendPoint[]) {
-  const width = 640;
-  const height = 220;
-  const paddingX = 20;
-  const paddingY = 24;
+function formatAxisCurrency(value: number, domainRange: number) {
+  const absValue = Math.abs(value);
+  if (absValue >= 1_000_000 && domainRange >= 100_000) {
+    return `$${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (absValue >= 1_000 && domainRange >= 10_000) {
+    return `$${Math.round(value / 1_000).toLocaleString("en-US")}k`;
+  }
+  return formatCurrency(value, "USD", { digits: 0 });
+}
+
+function formatTrendDate(value: string, range: PortfolioHistoryRange) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--";
+  }
+
+  if (range === "1D") {
+    return new Intl.DateTimeFormat("zh-HK", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat("zh-HK", {
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function buildTrendModel(points: AssetTrendPoint[]) {
+  const { width, height, paddingTop, paddingRight, paddingBottom, paddingLeft } = TREND_VIEWBOX;
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
   const values = points.map((point) => point.value);
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
-  const valueRange = maxValue - minValue || 1;
+  const valuePadding = Math.max((maxValue - minValue) * 0.08, Math.max(maxValue, 1) * 0.002);
+  const domainMin = minValue === maxValue ? minValue - valuePadding : minValue - valuePadding;
+  const domainMax = minValue === maxValue ? maxValue + valuePadding : maxValue + valuePadding;
+  const valueRange = domainMax - domainMin || 1;
 
-  return points
-    .map((point, index) => {
-      const x = paddingX + (index / Math.max(points.length - 1, 1)) * (width - paddingX * 2);
-      const y = height - paddingY - ((point.value - minValue) / valueRange) * (height - paddingY * 2);
-      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
+  const coordinates = points.map((point, index) => {
+    const x = paddingLeft + (index / Math.max(points.length - 1, 1)) * chartWidth;
+    const y = paddingTop + (1 - (point.value - domainMin) / valueRange) * chartHeight;
+    return { ...point, x, y };
+  });
+  const path = coordinates
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
     .join(" ");
+  const axisTicks = [
+    { value: domainMax, y: paddingTop },
+    { value: (domainMax + domainMin) / 2, y: paddingTop + chartHeight / 2 },
+    { value: domainMin, y: paddingTop + chartHeight },
+  ];
+
+  return {
+    path,
+    coordinates,
+    axisTicks,
+    valueRange,
+    chartStartX: paddingLeft,
+    chartEndX: paddingLeft + chartWidth,
+    chartBottomY: paddingTop + chartHeight,
+  };
 }
 
 function DashboardStatusCard(props: {
@@ -81,29 +163,169 @@ function DashboardStatusCard(props: {
   );
 }
 
-function AssetTrendChart(props: { points: AssetTrendPoint[] }) {
+function AssetTrendChart(props: { points: AssetTrendPoint[]; range: PortfolioHistoryRange }) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
   if (props.points.length < 2) {
     return <div className="dashboard-trend-empty">暂无资产走势数据</div>;
   }
 
-  const path = buildLinePath(props.points);
+  const model = buildTrendModel(props.points);
+  const hoverPoint = hoverIndex === null ? null : model.coordinates[hoverIndex];
+  const xLabels = [
+    props.points[0],
+    props.points[Math.floor((props.points.length - 1) / 2)],
+    props.points[props.points.length - 1],
+  ];
 
   return (
-    <svg className="dashboard-trend-chart" viewBox="0 0 640 220" role="img" aria-label="资产走势折线图">
-      <line x1="20" y1="196" x2="620" y2="196" />
-      <path d={path} />
-    </svg>
+    <div className="dashboard-trend-chart-shell">
+      <svg className="dashboard-trend-chart" viewBox={`0 0 ${TREND_VIEWBOX.width} ${TREND_VIEWBOX.height}`} role="img" aria-label="资产走势折线图">
+        <defs>
+          <linearGradient id="assetTrendArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#7aa2ff" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#7aa2ff" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {model.axisTicks.map((tick) => (
+          <g key={`${tick.value}-${tick.y}`} className="dashboard-trend-grid">
+            <line x1={model.chartStartX} y1={tick.y} x2={model.chartEndX} y2={tick.y} />
+            <text x={model.chartEndX + 10} y={tick.y + 4}>{formatAxisCurrency(tick.value, model.valueRange)}</text>
+          </g>
+        ))}
+
+        <path
+          className="dashboard-trend-area"
+          d={`${model.path} L ${model.chartEndX} ${model.chartBottomY} L ${model.chartStartX} ${model.chartBottomY} Z`}
+        />
+        <path className="dashboard-trend-line" d={model.path} />
+
+        {model.coordinates.map((point, index) => (
+          <circle
+            key={`${point.timestamp}-${index}`}
+            className={index === hoverIndex ? "dashboard-trend-point is-active" : "dashboard-trend-point"}
+            cx={point.x}
+            cy={point.y}
+            r={index === hoverIndex ? 4.5 : 2.5}
+          />
+        ))}
+
+        {xLabels.map((point, index) => {
+          const coordinate = model.coordinates[index === 0 ? 0 : index === 1 ? Math.floor((model.coordinates.length - 1) / 2) : model.coordinates.length - 1];
+          return (
+            <text
+              key={`${point.timestamp}-${index}`}
+              className="dashboard-trend-x-label"
+              x={coordinate.x}
+              y={TREND_VIEWBOX.height - 8}
+              textAnchor={index === 0 ? "start" : index === 1 ? "middle" : "end"}
+            >
+              {formatTrendDate(point.timestamp, props.range)}
+            </text>
+          );
+        })}
+
+        {model.coordinates.map((point, index) => (
+          <rect
+            key={`hit-${point.timestamp}-${index}`}
+            className="dashboard-trend-hit-area"
+            x={point.x - Math.max(8, (model.chartEndX - model.chartStartX) / props.points.length / 2)}
+            y={TREND_VIEWBOX.paddingTop}
+            width={Math.max(16, (model.chartEndX - model.chartStartX) / props.points.length)}
+            height={model.chartBottomY - TREND_VIEWBOX.paddingTop}
+            onMouseEnter={() => setHoverIndex(index)}
+            onMouseLeave={() => setHoverIndex(null)}
+          />
+        ))}
+      </svg>
+
+      {hoverPoint ? (
+        <div
+          className="dashboard-trend-tooltip"
+          style={{
+            left: `${(hoverPoint.x / TREND_VIEWBOX.width) * 100}%`,
+            top: `${(hoverPoint.y / TREND_VIEWBOX.height) * 100}%`,
+          }}
+        >
+          <strong>{formatCurrency(hoverPoint.value, "USD")}</strong>
+          <span>{formatShortTime(hoverPoint.timestamp)}</span>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
+function mapHistoryToTrendPoints(history: PortfolioHistoryPoint[]): AssetTrendPoint[] {
+  return history
+    .filter((point) => point.net_liquidation !== null)
+    .map((point) => ({
+      timestamp: point.recorded_at,
+      value: point.net_liquidation as number,
+    }));
+}
+
 function AssetTrendCard() {
-  const [activeRange, setActiveRange] = useState<TrendRange>("1D");
-  const trendPoints = useMemo<AssetTrendPoint[]>(() => [], []);
+  const [activeRange, setActiveRange] = useState<PortfolioHistoryRange>("1D");
+  const [history, setHistory] = useState<PortfolioHistoryPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const trendPoints = useMemo<AssetTrendPoint[]>(() => mapHistoryToTrendPoints(history), [history]);
+  const latestPoint = trendPoints.length > 0 ? trendPoints[trendPoints.length - 1] : null;
+  const firstPoint = trendPoints[0] ?? null;
+  const valueChange = latestPoint && firstPoint ? latestPoint.value - firstPoint.value : null;
+  const percentChange = valueChange !== null && firstPoint && firstPoint.value !== 0
+    ? (valueChange / firstPoint.value) * 100
+    : null;
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadHistory() {
+      setLoading(true);
+      try {
+        const nextHistory = await listPortfolioHistory(activeRange);
+        if (!ignore) {
+          setHistory(nextHistory);
+          setError(null);
+        }
+      } catch (nextError) {
+        if (!ignore) {
+          setError(nextError instanceof Error ? nextError.message : "资产走势加载失败");
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadHistory();
+
+    function handleSnapshotRefreshed() {
+      void loadHistory();
+    }
+
+    window.addEventListener("tradebrain:snapshot-refreshed", handleSnapshotRefreshed);
+    return () => {
+      ignore = true;
+      window.removeEventListener("tradebrain:snapshot-refreshed", handleSnapshotRefreshed);
+    };
+  }, [activeRange]);
 
   return (
     <article className="panel dashboard-trend-card">
       <div className="dashboard-card-header">
-        <h3>资产走势</h3>
+        <div>
+          <h3>资产走势</h3>
+          <div className="dashboard-trend-summary">
+            <strong>{latestPoint ? formatCurrency(latestPoint.value, "USD") : "--"}</strong>
+            <span className={(valueChange ?? 0) >= 0 ? "trend-positive" : "trend-negative"}>
+              {valueChange !== null ? formatCurrency(valueChange, "USD") : "--"}
+              {percentChange !== null ? ` / ${formatPercent(percentChange)}` : ""}
+            </span>
+          </div>
+        </div>
         <div className="dashboard-range-tabs" aria-label="资产走势时间范围">
           {TREND_RANGES.map((range) => (
             <button
@@ -118,7 +340,8 @@ function AssetTrendCard() {
           ))}
         </div>
       </div>
-      <AssetTrendChart points={trendPoints} />
+      {error ? <div className="dashboard-events-error">{error}</div> : null}
+      {loading ? <div className="dashboard-trend-empty">加载资产走势中...</div> : <AssetTrendChart points={trendPoints} range={activeRange} />}
     </article>
   );
 }

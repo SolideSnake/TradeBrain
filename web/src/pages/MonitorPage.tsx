@@ -238,7 +238,7 @@ export function MonitorPage() {
               </span>
             ) : null}
           </div>
-          <button type="submit" className="button button-toolbar" disabled={submitting}>
+          <button type="submit" className="button button-primary" disabled={submitting}>
             {submitting ? "添加中" : "添加"}
           </button>
         </form>
@@ -249,7 +249,7 @@ export function MonitorPage() {
           <div>
             <h3>策略线索</h3>
           </div>
-          <button type="button" className="button button-secondary" onClick={() => void loadScannerResult()}>
+          <button type="button" className="button button-ghost" onClick={() => void loadScannerResult()}>
             重新扫描
           </button>
         </div>
@@ -347,7 +347,7 @@ export function MonitorPage() {
                 <div className="table-actions">
                   <button
                     type="button"
-                    className="button button-danger"
+                    className="button button-danger-ghost button-compact"
                     onClick={() => void handleDelete(entry.id)}
                   >
                     删除
@@ -414,22 +414,26 @@ function RangePositionGroup({
         <span className="range-period">{period}</span>
         <div className="range-chip-row">
           <span className="range-chip range-chip-low">
-            <span>L</span>
-            <strong>{formatSignedPercent(lowDistancePercent)}</strong>
+            <span className="range-chip-main">
+              <span>L</span>
+              <span className="range-chip-price">{formatRangePrice(low, currency)}</span>
+              <strong>{formatSignedPercent(lowDistancePercent)}</strong>
+            </span>
           </span>
           <span className="range-chip range-chip-high">
-            <span>H</span>
-            <strong>{formatHighDistance(highDistancePercent)}</strong>
+            <span className="range-chip-main">
+              <span>H</span>
+              <span className="range-chip-price">{formatRangePrice(high, currency)}</span>
+              <strong>{formatHighDistance(highDistancePercent)}</strong>
+            </span>
           </span>
         </div>
       </div>
       {progress !== null ? (
         <div className="range-progress-row">
-          <span className="range-price">{formatRangePrice(low, currency)}</span>
           <div className="range-progress" aria-label={`${period} 区间位置 ${progress.toFixed(0)}%`}>
             <span style={{ width: `${progress}%` }} />
           </div>
-          <span className="range-price">{formatRangePrice(high, currency)}</span>
         </div>
       ) : null}
     </div>

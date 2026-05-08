@@ -83,7 +83,7 @@ export function App() {
         <div className="sidebar-refresh">
           <button
             type="button"
-            className="sidebar-refresh-button"
+            className="button button-ghost sidebar-refresh-button"
             onClick={() => void handleManualRefresh()}
             disabled={refreshStatus === "loading"}
           >

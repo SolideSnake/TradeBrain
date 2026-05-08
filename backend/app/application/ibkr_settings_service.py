@@ -127,7 +127,6 @@ class IBKRSettingsService:
         )
 
     def _read_from_environment(self) -> IBKRSettingsRead:
-        mode = normalize_ibkr_mode(self._settings.ibkr_mode)
         active_profile = self._resolve_environment_active_profile()
         real = IBKRConnectionProfile(
             host=self._settings.ibkr_real_host,
@@ -155,7 +154,7 @@ class IBKRSettingsService:
                 paper = legacy_profile
 
         return IBKRSettingsRead(
-            mode=mode,
+            mode="ibkr",
             active_profile=active_profile,
             active_display_name=ibkr_display_name(active_profile),
             real=real,
@@ -169,9 +168,9 @@ class IBKRSettingsService:
             return normalize_ibkr_profile(explicit_profile)
 
         legacy_port = os.environ.get("IBKR_PORT")
-        if normalize_ibkr_mode(self._settings.ibkr_mode) == "ibkr" and legacy_port == "7496":
+        if legacy_port == "7496":
             return "real"
-        if normalize_ibkr_mode(self._settings.ibkr_mode) == "ibkr" and legacy_port == "7497":
+        if legacy_port == "7497":
             return "paper"
         return normalize_ibkr_profile(self._settings.ibkr_active_profile)
 

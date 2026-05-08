@@ -175,7 +175,6 @@ APP_ENV=development
 APP_PORT=8000
 DB_PATH=backend/tradebrain.db
 
-IBKR_MODE=mock
 IBKR_ACTIVE_PROFILE=paper
 IBKR_HOST=127.0.0.1
 IBKR_PORT=7497
@@ -202,9 +201,9 @@ FEISHU_SECRET=
 
 说明：
 
-- `IBKR_MODE=mock` 适合本地先看 UI，不依赖 TWS。
-- 如果要连接 TWS，请改成 `IBKR_MODE=ibkr`；旧写法 `IBKR_MODE=live` 仍兼容。
+- TradeBrain 现在只使用 IBKR TWS 只读连接，不再提供后端 Mock 数据模式。
 - `IBKR_ACTIVE_PROFILE=paper` 使用模拟 TWS，默认端口 `7497`；`real` 使用真实 TWS，默认端口 `7496`。
+- 新电脑或测试环境建议先登录 TWS Paper，再确认 TWS API 已启用且 socket port 是 `7497`。
 - 更推荐在前端 `Settings` 页面保存和切换 IBKR 配置；同一时间只会激活真实或模拟中的一个。
 - Telegram 配置更推荐在前端 `Settings` 页面里填写，由后端本地保存，不建议长期直接写在 `.env`。
 - 飞书配置使用自定义机器人 Webhook；如果机器人安全设置开启“签名校验”，同时填写 `FEISHU_SECRET` 或在 `Settings` 页面保存 Secret。
@@ -228,6 +227,7 @@ FEISHU_SECRET=
 - `POST /api/snapshot/refresh`：手动刷新快照，失败时保留旧快照
 - `GET /api/states`
 - `GET /api/scanner`
+- `GET /api/portfolio/history`：读取资产历史走势点
 - `GET /api/events`：读取全局事件时间线
 - `GET /api/alert-rules`
 - `POST /api/alert-rules`
@@ -253,6 +253,7 @@ FEISHU_SECRET=
 - 手动刷新如果遇到 TWS 刚启动、端口未就绪或 IBKR 请求过慢，会在前端超时提示并保留旧数据。
 - 后端同一时间只允许一轮快照刷新，避免自动刷新和手动刷新互相叠加。
 - 每次快照刷新都会写入一条事件；事件默认保留 `90 天`，最多 `10000 条`。
+- 每次快照成功刷新都会写入一条资产历史点；资产走势来自本地历史表，不直接向 IBKR 拉历史曲线。
 
 ## 追踪页指标说明
 
@@ -275,7 +276,7 @@ FEISHU_SECRET=
 
 1. 打开 TWS 或 IB Gateway
 2. 在 TWS 里开启 API socket
-3. 打开 `Settings`，把 `IBKR` 数据模式改成 `IBKR TWS`
+3. 打开 `Settings`，在 `IBKR TWS 连接` 里选择当前激活环境
 4. 模拟账户选择 `模拟 TWS Paper`，确认端口是 `7497`
 5. 真实账户选择 `真实 TWS`，确认端口是 `7496`
 6. 点击对应 profile 的 `测试连接`

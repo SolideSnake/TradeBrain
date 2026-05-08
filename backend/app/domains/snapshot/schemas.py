@@ -16,10 +16,10 @@ from app.domains.state.schemas import WatchlistStateSnapshot
 
 class SnapshotMeta(BaseModel):
     generated_at: datetime
-    broker_mode: Literal["mock", "live"]
-    broker_status: Literal["mock", "connected", "error"]
-    broker_profile: Literal["mock", "real", "paper"] = "mock"
-    broker_display_name: str = "Mock 数据"
+    broker_mode: Literal["live"]
+    broker_status: Literal["connected", "error"]
+    broker_profile: Literal["real", "paper"] = "paper"
+    broker_display_name: str = "模拟 TWS"
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -50,10 +50,10 @@ class CanonicalWatchlistItem(BaseModel):
 
 
 class BrokerSnapshotEnvelope(BaseModel):
-    mode: Literal["mock", "live"]
-    status: Literal["mock", "connected", "error"]
-    profile: Literal["mock", "real", "paper"] = "mock"
-    display_name: str = "Mock 数据"
+    mode: Literal["live"]
+    status: Literal["connected", "error"]
+    profile: Literal["real", "paper"] = "paper"
+    display_name: str = "模拟 TWS"
     account: AccountSnapshot
     positions: list[PositionSnapshot]
     quotes: dict[str, QuoteSnapshot]

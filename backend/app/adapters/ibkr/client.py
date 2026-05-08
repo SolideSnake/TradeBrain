@@ -28,11 +28,9 @@ class IBKRRuntimeProfile:
     account_id: str = ""
 
 
-def normalize_ibkr_mode(value: str) -> Literal["mock", "ibkr"]:
-    normalized = value.strip().lower()
-    if normalized in {"ibkr", "live"}:
-        return "ibkr"
-    return "mock"
+def normalize_ibkr_mode(value: str) -> Literal["ibkr"]:
+    # Stored legacy values are normalized during migration/readback.
+    return "ibkr"
 
 
 def normalize_ibkr_profile(value: str) -> IBKRProfileName:
@@ -58,97 +56,6 @@ def resolve_legacy_runtime_profile(settings: Settings) -> IBKRRuntimeProfile:
 class IBKRClient:
     def fetch_snapshot(self, tracked_symbols: Sequence[str]) -> BrokerSnapshotEnvelope:
         raise NotImplementedError
-
-
-class MockIBKRClient(IBKRClient):
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-
-    def fetch_snapshot(self, tracked_symbols: Sequence[str]) -> BrokerSnapshotEnvelope:
-        now = datetime.now(UTC)
-        unique_symbols = sorted({symbol.strip().upper() for symbol in tracked_symbols if symbol})
-        quotes = {symbol: self._build_quote(symbol, now) for symbol in unique_symbols}
-        reference_levels = {
-            symbol: self._build_reference_levels(symbol, now) for symbol in unique_symbols
-        }
-        fundamentals = {
-            symbol: self._build_fundamentals(symbol, now) for symbol in unique_symbols
-        }
-        account = AccountSnapshot(
-            account_id=self.settings.ibkr_account_id or "MOCK-ACCOUNT",
-            net_liquidation=250000.0,
-            cash_balance=82000.0,
-            settled_cash=82000.0,
-            available_funds=82000.0,
-            buying_power=164000.0,
-            currency="USD",
-            source="mock",
-            updated_at=now,
-        )
-        return BrokerSnapshotEnvelope(
-            mode="mock",
-            status="mock",
-            profile="mock",
-            display_name="Mock 数据",
-            account=account,
-            positions=[],
-            quotes=quotes,
-            reference_levels=reference_levels,
-            fundamentals=fundamentals,
-            warnings=[
-                "IBKR mock mode is active. Connect TWS/Gateway and switch IBKR_MODE=live for real data."
-            ],
-        )
-
-    def _build_quote(self, symbol: str, now: datetime) -> QuoteSnapshot:
-        seed = sum(ord(character) for character in symbol)
-        previous_close = round(20 + (seed % 240) + ((seed % 17) / 10), 2)
-        drift = ((seed % 9) - 4) / 100
-        last_price = round(previous_close * (1 + drift), 2)
-        change_percent = round(((last_price - previous_close) / previous_close) * 100, 2)
-        bid = round(last_price - 0.05, 2)
-        ask = round(last_price + 0.05, 2)
-        return QuoteSnapshot(
-            symbol=symbol,
-            last_price=last_price,
-            previous_close=previous_close,
-            change_percent=change_percent,
-            bid=bid,
-            ask=ask,
-            currency=self._currency_for_symbol(symbol),
-            as_of=now,
-            source="mock",
-        )
-
-    def _currency_for_symbol(self, symbol: str) -> str:
-        if symbol.isdigit() and len(symbol) == 6:
-            return "KRW"
-        return "USD"
-
-    def _build_reference_levels(self, symbol: str, now: datetime) -> PriceReferenceLevels:
-        quote = self._build_quote(symbol, now)
-        last_price = quote.last_price or 0.0
-        return PriceReferenceLevels(
-            high_52w=round(last_price * 1.18, 2) if last_price else None,
-            low_52w=round(last_price * 0.72, 2) if last_price else None,
-            high_90d=round(last_price * 1.08, 2) if last_price else None,
-            low_90d=round(last_price * 0.88, 2) if last_price else None,
-            source="mock",
-            as_of=now,
-        )
-
-    def _build_fundamentals(self, symbol: str, now: datetime) -> FundamentalSnapshot:
-        seed = sum(ord(character) for character in symbol)
-        pe_ratio = round(10 + (seed % 18) + ((seed % 10) / 10), 2)
-        growth = round(8 + (seed % 28) + ((seed % 9) / 10), 2)
-        peg_ratio = round(pe_ratio / growth, 2) if growth > 0 else None
-        return FundamentalSnapshot(
-            pe_ratio=pe_ratio,
-            earnings_growth_rate_percent=growth,
-            peg_ratio=peg_ratio,
-            source="mock",
-            as_of=now,
-        )
 
 
 class LiveIBKRClient(IBKRClient):
@@ -938,6 +845,4 @@ class LiveIBKRClient(IBKRClient):
 @lru_cache(maxsize=1)
 def get_ibkr_client() -> IBKRClient:
     settings = get_settings()
-    if normalize_ibkr_mode(settings.ibkr_mode) == "ibkr":
-        return LiveIBKRClient(settings)
-    return MockIBKRClient(settings)
+    return LiveIBKRClient(settings)

@@ -39,7 +39,7 @@ export function AlertRuleDialog(props: {
             <h2>新增提醒规则</h2>
             <p>先选模板，再填少量参数。规则命中后会通过已配置的通知通道推送。</p>
           </div>
-          <button type="button" className="button button-secondary" onClick={props.onClose}>
+          <button type="button" className="button button-tertiary" onClick={props.onClose}>
             关闭
           </button>
         </div>
@@ -125,10 +125,10 @@ export function AlertRuleDialog(props: {
         </label>
 
         <div className="modal-actions">
-          <button type="button" className="button button-secondary" onClick={props.onClose}>
+          <button type="button" className="button button-tertiary" onClick={props.onClose}>
             取消
           </button>
-          <button type="submit" className="button" disabled={props.saving}>
+          <button type="submit" className="button button-primary" disabled={props.saving}>
             {props.saving ? "保存中..." : "保存规则"}
           </button>
         </div>

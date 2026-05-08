@@ -44,9 +44,11 @@ def init_db() -> None:
     import app.domains.alerting.models  # noqa: F401
     import app.domains.events.models  # noqa: F401
     import app.domains.fx.models  # noqa: F401
+    import app.domains.portfolio_history.models  # noqa: F401
     import app.domains.preferences.models  # noqa: F401
     import app.domains.snapshot.models  # noqa: F401
     import app.domains.state.models  # noqa: F401
+    import app.domains.target_portfolio.models  # noqa: F401
     import app.domains.watchlist.models  # noqa: F401
 
     engine = get_engine()
@@ -54,6 +56,7 @@ def init_db() -> None:
         connection.exec_driver_sql("PRAGMA journal_mode=WAL;")
     Base.metadata.create_all(bind=engine)
     _drop_legacy_alert_events(engine)
+    _migrate_ibkr_settings(engine)
     _migrate_alert_rules(engine)
     _migrate_notification_settings(engine)
     _migrate_known_watchlist_markets(engine)
@@ -62,6 +65,17 @@ def init_db() -> None:
 def _drop_legacy_alert_events(engine) -> None:
     with engine.begin() as connection:
         connection.exec_driver_sql("DROP TABLE IF EXISTS alert_events")
+
+
+def _migrate_ibkr_settings(engine) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            """
+            UPDATE ibkr_settings
+            SET mode = 'ibkr'
+            WHERE mode IS NULL OR mode <> 'ibkr'
+            """
+        )
 
 
 def _migrate_alert_rules(engine) -> None:

@@ -36,10 +36,10 @@ export function AlertRulesSummaryBar(props: {
       </div>
 
       <div className="alert-rule-toolbar">
-        <button type="button" className="button button-secondary" onClick={props.onResetCounters}>
+        <button type="button" className="button button-danger-ghost" onClick={props.onResetCounters}>
           重置统计
         </button>
-        <button type="button" className="button" onClick={props.onCreateRule}>
+        <button type="button" className="button button-primary" onClick={props.onCreateRule}>
           新增规则
         </button>
       </div>
@@ -96,10 +96,10 @@ export function AlertRulesTable(props: {
               <strong className={rule.suppressed_count > 0 ? "value-warning" : undefined}>{rule.suppressed_count}</strong>
               <span className="muted">{rule.last_triggered_at ? formatDateTime(rule.last_triggered_at) : "--"}</span>
               <div className="table-actions">
-                <button type="button" className="button button-secondary" onClick={() => props.onToggle(rule)}>
+                <button type="button" className="button button-tertiary button-compact" onClick={() => props.onToggle(rule)}>
                   {rule.enabled ? "停用" : "启用"}
                 </button>
-                <button type="button" className="button button-danger" onClick={() => props.onDelete(rule.id)}>
+                <button type="button" className="button button-danger-ghost button-compact" onClick={() => props.onDelete(rule.id)}>
                   删除
                 </button>
               </div>

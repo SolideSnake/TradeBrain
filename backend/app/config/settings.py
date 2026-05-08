@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     app_port: int = 8000
     db_path: str = "backend/tradebrain.db"
 
-    ibkr_mode: str = "mock"
     ibkr_active_profile: str = "paper"
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 7497

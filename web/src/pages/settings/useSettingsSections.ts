@@ -55,7 +55,6 @@ export interface SettingsProfileState {
 
 export interface IBKRSettingsSectionState {
   ibkrSettings: IBKRSettings | null;
-  ibkrMode: IBKRSettings["mode"];
   activeProfile: IBKRProfileName;
   loading: boolean;
   saving: boolean;
@@ -63,7 +62,6 @@ export interface IBKRSettingsSectionState {
   success: string | null;
   activeProfileState: SettingsProfileState;
   standbyProfileState: SettingsProfileState;
-  setIbkrMode: (mode: IBKRSettings["mode"]) => void;
   setActiveProfile: (profile: IBKRProfileName) => void;
   reload: () => Promise<void>;
   handleSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
@@ -202,7 +200,6 @@ export function useNotificationSettingsSection(): NotificationSettingsSectionSta
 
 export function useIBKRSettingsSection(): IBKRSettingsSectionState {
   const [ibkrSettings, setIbkrSettings] = useState<IBKRSettings | null>(null);
-  const [ibkrMode, setIbkrMode] = useState<IBKRSettings["mode"]>("mock");
   const [activeProfile, setActiveProfile] = useState<IBKRProfileName>("paper");
   const [realProfile, setRealProfile] = useState<IBKRConnectionProfile>(defaultIBKRProfile("real"));
   const [paperProfile, setPaperProfile] = useState<IBKRConnectionProfile>(defaultIBKRProfile("paper"));
@@ -214,7 +211,6 @@ export function useIBKRSettingsSection(): IBKRSettingsSectionState {
 
   const applyIBKRSettings = useCallback((nextSettings: IBKRSettings) => {
     setIbkrSettings(nextSettings);
-    setIbkrMode(nextSettings.mode);
     setActiveProfile(nextSettings.active_profile);
     setRealProfile(nextSettings.real);
     setPaperProfile(nextSettings.paper);
@@ -245,7 +241,7 @@ export function useIBKRSettingsSection(): IBKRSettingsSectionState {
 
       try {
         const nextSettings = await updateIBKRSettings({
-          mode: ibkrMode,
+          mode: "ibkr",
           active_profile: activeProfile,
           real: realProfile,
           paper: paperProfile,
@@ -259,7 +255,7 @@ export function useIBKRSettingsSection(): IBKRSettingsSectionState {
         setSaving(false);
       }
     },
-    [activeProfile, applyIBKRSettings, ibkrMode, paperProfile, realProfile],
+    [activeProfile, applyIBKRSettings, paperProfile, realProfile],
   );
 
   const handleTest = useCallback(async (profile: IBKRProfileName) => {
@@ -317,7 +313,6 @@ export function useIBKRSettingsSection(): IBKRSettingsSectionState {
 
   return {
     ibkrSettings,
-    ibkrMode,
     activeProfile,
     loading,
     saving,
@@ -325,7 +320,6 @@ export function useIBKRSettingsSection(): IBKRSettingsSectionState {
     success,
     activeProfileState,
     standbyProfileState,
-    setIbkrMode,
     setActiveProfile,
     reload,
     handleSubmit,

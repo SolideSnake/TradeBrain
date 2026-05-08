@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.adapters.ibkr.client import IBKRClient, LiveIBKRClient, MockIBKRClient
+from app.adapters.ibkr.client import IBKRClient, LiveIBKRClient
 from app.adapters.persistence.sqlite.fx_rate_repository import FxRateRepository
 from app.adapters.persistence.sqlite.watchlist_repository import WatchlistRepository
 from app.application.ibkr_settings_service import IBKRSettingsService
@@ -173,7 +173,5 @@ class SnapshotBuilder:
         if self.ibkr_client is not None:
             return self.ibkr_client
 
-        mode, profile = self.ibkr_settings_service.resolve_runtime_profile(db)
-        if mode == "ibkr":
-            return LiveIBKRClient(self.settings, profile)
-        return MockIBKRClient(self.settings)
+        _mode, profile = self.ibkr_settings_service.resolve_runtime_profile(db)
+        return LiveIBKRClient(self.settings, profile)

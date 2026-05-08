@@ -3,7 +3,7 @@ def test_ibkr_settings_endpoint_returns_default_profiles(client):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["mode"] == "mock"
+    assert payload["mode"] == "ibkr"
     assert payload["active_profile"] == "paper"
     assert payload["active_display_name"] == "模拟 TWS"
     assert payload["paper"]["port"] == 7497
@@ -12,11 +12,10 @@ def test_ibkr_settings_endpoint_returns_default_profiles(client):
     assert payload["real"]["client_id"] == 1
 
 
-def test_ibkr_settings_can_switch_active_profile_and_mode(client):
+def test_ibkr_settings_can_switch_active_profile(client):
     response = client.put(
         "/api/settings/ibkr",
         json={
-            "mode": "ibkr",
             "active_profile": "real",
             "real": {
                 "host": "127.0.0.1",
@@ -63,7 +62,6 @@ def test_ibkr_connection_test_returns_readable_failure(client):
     client.put(
         "/api/settings/ibkr",
         json={
-            "mode": "ibkr",
             "active_profile": "paper",
             "paper": {
                 "host": "127.0.0.1",

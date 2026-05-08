@@ -47,6 +47,7 @@
 - 完成账户现金字段修正：`TotalCashValue` 才显示为现金，`AvailableFunds` 单独显示为可用资金
 - 完成多币种持仓换算：新增 `domains/fx`，IBKR 拉汇率并缓存到 SQLite，资产页用账户基准货币计算环图和未实现盈亏汇总
 - 完成资产页多币种展示：汇总用 USD 基准金额，单行保留原币副行，例如 KRW 持仓同时显示 USD / KRW
+- 完成资产走势后端：每次快照成功刷新后写入 `portfolio_history`，总览页通过 `/api/portfolio/history` 绘制本地历史走势
 - 完成 IBKR 请求超时配置和手动刷新防卡住保护
 - 完成根目录一键安装脚本与一键启动脚本
 - 完成根目录 README 中文运行说明
@@ -55,7 +56,7 @@
 
 最近一次完整验证：
 
-- 后端：`pytest`，`66 passed`
+- 后端：`pytest`，`70 passed`
 - 前端：`npm run build`，通过
 
 当前 `docs/` 目录只保留两份核心文档：
@@ -304,4 +305,4 @@ MVP 后已新增：
 
 ## 9. 一句话交接结论
 
-TradeBrain 第一版 MVP 已完成，当前主链路已经演进为 “IBKR/Mock -> SnapshotBuilder -> FX 换算 -> SnapshotPipeline -> 指标/状态/提醒 -> 快照缓存 -> Web 看板”，并新增 “CanonicalSnapshot -> StrategyEvaluator -> ScoringService -> ScannerService -> /api/scanner -> 追踪页策略线索”。追踪页已具备 52W/90D 区间位置展示，资产页已支持现金/可用资金区分和多币种基准货币汇总。下一步重点是把买卖计划从 watchlist 外提出来，进入独立策略计划模型。
+TradeBrain 第一版 MVP 已完成，当前主链路已经演进为 “IBKR TWS real/paper -> SnapshotBuilder -> FX 换算 -> SnapshotPipeline -> 指标/状态/提醒 -> 快照缓存 -> Web 看板”。后端运行链路已移除 Mock 数据模式，日常测试建议使用 TWS Paper 账户；自动化测试保留测试专用 IBKR 客户端。项目已新增 “CanonicalSnapshot -> StrategyEvaluator -> ScoringService -> ScannerService -> /api/scanner -> 追踪页策略线索”。追踪页已具备 52W/90D 区间位置展示，资产页已支持现金/可用资金区分和多币种基准货币汇总。下一步重点是把买卖计划从 watchlist 外提出来，进入独立策略计划模型。

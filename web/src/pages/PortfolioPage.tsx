@@ -1,7 +1,14 @@
-import { type CSSProperties, type ReactNode, useMemo } from "react";
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { useSnapshotResource } from "../hooks/useSnapshotResource";
-import { type CanonicalSnapshot, type PositionSnapshot } from "../shared/api";
+import {
+  createTargetPosition,
+  deleteTargetPosition,
+  listTargetPositions,
+  type CanonicalSnapshot,
+  type PositionSnapshot,
+  type TargetPosition,
+} from "../shared/api";
 import { formatCurrency, formatDateTime, formatPercent } from "../shared/formatters";
 
 const PIE_COLORS = ["#4f7eff", "#4fd46b", "#f0b35f", "#f06f82", "#8f7dff", "#42cbd4"];
@@ -11,6 +18,7 @@ interface PieSlice {
   value: number;
   detail: string;
   color: string;
+  action?: ReactNode;
 }
 
 type FundsTone = "positive" | "negative" | "neutral";
@@ -59,10 +67,7 @@ function brokerStatusLabel(status: CanonicalSnapshot["meta"]["broker_status"]) {
   if (status === "connected") {
     return "已连接";
   }
-  if (status === "error") {
-    return "异常";
-  }
-  return "模拟";
+  return "异常";
 }
 
 function baseAmount(
@@ -160,6 +165,32 @@ function buildPositionSlices(positions: PositionSnapshot[], baseCurrency: string
   return slices;
 }
 
+function buildTargetSlices(
+  targetPositions: TargetPosition[],
+  onDelete: (position: TargetPosition) => void,
+  deletingId: number | null,
+): PieSlice[] {
+  return targetPositions
+    .filter((position) => position.target_value_usd > 0)
+    .sort((left, right) => right.target_value_usd - left.target_value_usd || left.symbol.localeCompare(right.symbol))
+    .map((position, index) => ({
+      label: position.symbol,
+      value: position.target_value_usd,
+      detail: formatCurrency(position.target_value_usd, "USD", { digits: 2 }),
+      color: PIE_COLORS[index % PIE_COLORS.length],
+      action: (
+        <button
+          type="button"
+          className="button button-danger-ghost button-compact"
+          onClick={() => onDelete(position)}
+          disabled={deletingId === position.id}
+        >
+          {deletingId === position.id ? "删除中" : "删除"}
+        </button>
+      ),
+    }));
+}
+
 function PortfolioKpiCard(props: {
   label: string;
   value: ReactNode;
@@ -242,6 +273,7 @@ function PortfolioPieChart(props: {
   centerValue?: ReactNode;
   centerLabel?: string;
   variant?: "default" | "featured";
+  actions?: ReactNode;
 }) {
   const total = props.slices.reduce((sum, slice) => sum + slice.value, 0);
   const radius = 42;
@@ -251,9 +283,12 @@ function PortfolioPieChart(props: {
 
   return (
     <article className={`panel portfolio-chart-card${variantClassName}`}>
-      <div>
-        <h3>{props.title}</h3>
-        {props.description ? <p className="panel-note">{props.description}</p> : null}
+      <div className="portfolio-chart-header">
+        <div>
+          <h3>{props.title}</h3>
+          {props.description ? <p className="panel-note">{props.description}</p> : null}
+        </div>
+        {props.actions ? <div className="portfolio-chart-actions">{props.actions}</div> : null}
       </div>
 
       {props.slices.length === 0 || total <= 0 ? (
@@ -295,6 +330,7 @@ function PortfolioPieChart(props: {
                 <span className="portfolio-legend-name">{slice.label}</span>
                 <span className="portfolio-legend-percent">{formatPlainPercent((slice.value / total) * 100)}</span>
                 <span className="portfolio-legend-detail">{slice.detail}</span>
+                {slice.action ? <span className="portfolio-legend-action">{slice.action}</span> : null}
               </div>
             ))}
           </div>
@@ -308,6 +344,77 @@ export function PortfolioPage() {
   const { snapshot, loading, error } = useSnapshotResource({
     loadErrorMessage: "Failed to load portfolio snapshot.",
   });
+  const [targetPositions, setTargetPositions] = useState<TargetPosition[]>([]);
+  const [targetSymbol, setTargetSymbol] = useState("");
+  const [targetValue, setTargetValue] = useState("");
+  const [targetLoading, setTargetLoading] = useState(true);
+  const [targetSubmitting, setTargetSubmitting] = useState(false);
+  const [targetDeletingId, setTargetDeletingId] = useState<number | null>(null);
+  const [targetError, setTargetError] = useState<string | null>(null);
+
+  async function loadTargetPositions() {
+    setTargetLoading(true);
+    setTargetError(null);
+    try {
+      setTargetPositions(await listTargetPositions());
+    } catch (nextError) {
+      setTargetError(nextError instanceof Error ? nextError.message : "目标持仓加载失败");
+    } finally {
+      setTargetLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadTargetPositions();
+  }, []);
+
+  async function handleCreateTargetPosition(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const symbol = targetSymbol.trim().toUpperCase();
+    const parsedValue = Number(targetValue);
+
+    if (!symbol) {
+      setTargetError("请输入代码");
+      return;
+    }
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+      setTargetError("请输入大于 0 的美元金额");
+      return;
+    }
+
+    setTargetSubmitting(true);
+    setTargetError(null);
+    try {
+      const created = await createTargetPosition({
+        symbol,
+        target_value_usd: parsedValue,
+      });
+      setTargetPositions((current) =>
+        [...current, created].sort(
+          (left, right) => right.target_value_usd - left.target_value_usd || left.symbol.localeCompare(right.symbol),
+        ),
+      );
+      setTargetSymbol("");
+      setTargetValue("");
+    } catch (nextError) {
+      setTargetError(nextError instanceof Error ? nextError.message : "目标持仓保存失败");
+    } finally {
+      setTargetSubmitting(false);
+    }
+  }
+
+  async function handleDeleteTargetPosition(position: TargetPosition) {
+    setTargetDeletingId(position.id);
+    setTargetError(null);
+    try {
+      await deleteTargetPosition(position.id);
+      setTargetPositions((current) => current.filter((item) => item.id !== position.id));
+    } catch (nextError) {
+      setTargetError(nextError instanceof Error ? nextError.message : "目标持仓删除失败");
+    } finally {
+      setTargetDeletingId(null);
+    }
+  }
 
   const totals = useMemo(() => {
     const positions = snapshot?.positions ?? [];
@@ -335,6 +442,11 @@ export function PortfolioPage() {
     () => buildPositionSlices(snapshot?.positions ?? [], currency),
     [currency, snapshot?.positions],
   );
+  const targetSlices = useMemo(
+    () => buildTargetSlices(targetPositions, handleDeleteTargetPosition, targetDeletingId),
+    [targetDeletingId, targetPositions],
+  );
+  const targetTotal = targetPositions.reduce((sum, position) => sum + position.target_value_usd, 0);
 
   return (
     <section>
@@ -376,11 +488,38 @@ export function PortfolioPage() {
               />
               <PortfolioPieChart
                 title="目标持仓"
-                description="目标持仓暂未配置。"
-                slices={[]}
-                emptyMessage="目标持仓暂未配置"
-                centerValue="--"
-                centerLabel="目标"
+                description={targetError ?? (targetLoading ? "目标持仓加载中..." : undefined)}
+                slices={targetSlices}
+                emptyMessage={targetLoading ? "目标持仓加载中..." : "目标持仓暂未配置"}
+                centerValue={targetPositions.length || "--"}
+                centerLabel={targetTotal > 0 ? formatCurrency(targetTotal, "USD", { digits: 0 }) : "目标"}
+                actions={
+                  <form className="target-position-form" onSubmit={handleCreateTargetPosition} noValidate>
+                    <input
+                      value={targetSymbol}
+                      onChange={(event) => {
+                        setTargetSymbol(event.target.value.toUpperCase());
+                        setTargetError(null);
+                      }}
+                      placeholder="代码"
+                      maxLength={32}
+                      aria-label="目标持仓代码"
+                    />
+                    <input
+                      value={targetValue}
+                      onChange={(event) => {
+                        setTargetValue(event.target.value);
+                        setTargetError(null);
+                      }}
+                      placeholder="USD 金额"
+                      inputMode="decimal"
+                      aria-label="目标持仓美元金额"
+                    />
+                    <button type="submit" className="button button-toolbar" disabled={targetSubmitting}>
+                      {targetSubmitting ? "添加中" : "添加"}
+                    </button>
+                  </form>
+                }
               />
             </div>
 

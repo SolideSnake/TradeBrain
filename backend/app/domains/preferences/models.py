@@ -37,7 +37,7 @@ class IBKRSettings(Base):
     __tablename__ = "ibkr_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="mock")
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="ibkr")
     active_profile: Mapped[str] = mapped_column(String(16), nullable=False, default="paper")
     real_host: Mapped[str] = mapped_column(String(128), nullable=False, default="127.0.0.1")
     real_port: Mapped[int] = mapped_column(Integer, nullable=False, default=7496)

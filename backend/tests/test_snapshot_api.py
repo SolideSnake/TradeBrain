@@ -2,7 +2,7 @@ from app.api import router as router_module
 from app.application import snapshot_cache_service as snapshot_cache_module
 
 
-def test_snapshot_endpoint_returns_mock_snapshot(client):
+def test_snapshot_endpoint_returns_test_tws_snapshot(client):
     client.post(
         "/api/watchlist",
         json={
@@ -36,15 +36,16 @@ def test_snapshot_endpoint_returns_mock_snapshot(client):
     payload = response.json()
     assert payload["cache_status"] == "success"
     assert payload["from_cache"] is False
+    assert payload["last_success_at"].endswith(("Z", "+00:00"))
     snapshot = payload["snapshot"]
-    assert snapshot["meta"]["broker_mode"] == "mock"
-    assert snapshot["meta"]["broker_status"] == "mock"
-    assert snapshot["meta"]["broker_profile"] == "mock"
-    assert snapshot["meta"]["broker_display_name"] == "Mock 数据"
+    assert snapshot["meta"]["broker_mode"] == "live"
+    assert snapshot["meta"]["broker_status"] == "connected"
+    assert snapshot["meta"]["broker_profile"] == "paper"
+    assert snapshot["meta"]["broker_display_name"] == "测试 TWS Paper"
     assert snapshot["summary"]["tracked_symbols"] == 2
     assert snapshot["summary"]["quote_coverage"] == 2
     assert snapshot["summary"]["symbols_in_position"] == 1
-    assert snapshot["watchlist"][0]["quote"]["source"] == "mock"
+    assert snapshot["watchlist"][0]["quote"]["source"] == "test"
     assert snapshot["watchlist"][0]["fundamentals"]["peg_ratio"] is not None
     assert snapshot["watchlist"][0]["indicators"]["current_price"] is not None
     assert snapshot["watchlist"][0]["indicators"]["drawdown_from_52w_high_percent"] is not None
@@ -59,7 +60,7 @@ def test_snapshot_endpoint_returns_mock_snapshot(client):
         "overvalued",
     }
     assert snapshot["watchlist"][0]["state"]["has_changed"] is False
-    assert snapshot["account"]["account_id"] == "MOCK-ACCOUNT"
+    assert snapshot["account"]["account_id"] == "TEST-ACCOUNT"
 
 
 def test_snapshot_endpoint_returns_cached_snapshot_until_refresh(client):

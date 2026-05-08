@@ -30,11 +30,12 @@ export type AlertRuleOperator =
   | "cross_below"
   | "change_to";
 export type NotificationSettingsSource = "database" | "environment" | "none";
-export type IBKRMode = "mock" | "ibkr";
+export type IBKRMode = "ibkr";
 export type IBKRProfileName = "real" | "paper";
 export type IBKRSettingsSource = "database" | "environment";
 export type SnapshotCacheStatus = "empty" | "idle" | "refreshing" | "success" | "failed";
 export type ScannerCandidateReason = "large_drop" | "pullback_52w" | "undervalued";
+export type PortfolioHistoryRange = "1D" | "1W" | "1M" | "YTD";
 
 export interface WatchlistEntry {
   id: number;
@@ -50,6 +51,15 @@ export interface WatchlistEntry {
   updated_at: string;
 }
 
+export interface TargetPosition {
+  id: number;
+  symbol: string;
+  target_value_usd: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CreateWatchlistEntryPayload {
   symbol: string;
   name?: string;
@@ -58,6 +68,18 @@ export interface CreateWatchlistEntryPayload {
   group_name?: string;
   enabled?: boolean;
   in_position?: boolean;
+  notes?: string;
+}
+
+export interface CreateTargetPositionPayload {
+  symbol: string;
+  target_value_usd: number;
+  notes?: string;
+}
+
+export interface UpdateTargetPositionPayload {
+  symbol?: string;
+  target_value_usd?: number;
   notes?: string;
 }
 
@@ -317,6 +339,19 @@ export interface AccountSnapshot {
   updated_at: string;
 }
 
+export interface PortfolioHistoryPoint {
+  recorded_at: string;
+  account_id: string;
+  broker_profile: IBKRProfileName;
+  currency: string;
+  net_liquidation: number | null;
+  cash_balance: number | null;
+  available_funds: number | null;
+  buying_power: number | null;
+  unrealized_pnl: number | null;
+  positions_market_value: number | null;
+}
+
 export interface SnapshotSummary {
   tracked_symbols: number;
   enabled_symbols: number;
@@ -327,9 +362,9 @@ export interface SnapshotSummary {
 
 export interface SnapshotMeta {
   generated_at: string;
-  broker_mode: "mock" | "live";
-  broker_status: "mock" | "connected" | "error";
-  broker_profile: "mock" | "real" | "paper";
+  broker_mode: "live";
+  broker_status: "connected" | "error";
+  broker_profile: "real" | "paper";
   broker_display_name: string;
   warnings: string[];
 }
@@ -467,6 +502,39 @@ export function getScannerResult(): Promise<ScannerResult> {
 
 export function listEvents(limit = 50): Promise<EventRecord[]> {
   return request<EventRecord[]>(`/api/events?limit=${limit}`);
+}
+
+export function listPortfolioHistory(range: PortfolioHistoryRange): Promise<PortfolioHistoryPoint[]> {
+  return request<PortfolioHistoryPoint[]>(`/api/portfolio/history?range=${range}`);
+}
+
+export function listTargetPositions(): Promise<TargetPosition[]> {
+  return request<TargetPosition[]>("/api/target-positions");
+}
+
+export function createTargetPosition(
+  payload: CreateTargetPositionPayload,
+): Promise<TargetPosition> {
+  return request<TargetPosition>("/api/target-positions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateTargetPosition(
+  positionId: number,
+  payload: UpdateTargetPositionPayload,
+): Promise<TargetPosition> {
+  return request<TargetPosition>(`/api/target-positions/${positionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteTargetPosition(positionId: number): Promise<void> {
+  return request<void>(`/api/target-positions/${positionId}`, {
+    method: "DELETE",
+  });
 }
 
 export function listAlertRules(): Promise<AlertRule[]> {

@@ -39,8 +39,9 @@ def build_snapshot(drawdown: float = 6.5) -> CanonicalSnapshot:
     return CanonicalSnapshot(
         meta=SnapshotMeta(
             generated_at=now,
-            broker_mode="mock",
-            broker_status="mock",
+            broker_mode="live",
+            broker_status="connected",
+            broker_profile="paper",
         ),
         summary=SnapshotSummary(
             tracked_symbols=1,
@@ -54,7 +55,7 @@ def build_snapshot(drawdown: float = 6.5) -> CanonicalSnapshot:
             net_liquidation=250000.0,
             available_funds=82000.0,
             buying_power=164000.0,
-            source="mock",
+            source="test",
             updated_at=now,
         ),
         watchlist=[

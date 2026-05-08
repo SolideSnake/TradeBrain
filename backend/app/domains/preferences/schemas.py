@@ -40,7 +40,7 @@ class NotificationTestResult(BaseModel):
     detail: str
 
 
-IBKRMode = Literal["mock", "ibkr"]
+IBKRMode = Literal["ibkr"]
 IBKRProfileName = Literal["real", "paper"]
 IBKRSettingsSource = Literal["database", "environment"]
 
@@ -63,7 +63,7 @@ class IBKRSettingsUpdate(BaseModel):
     real: IBKRConnectionProfile | None = None
     paper: IBKRConnectionProfile | None = None
 
-    @field_validator("mode")
+    @field_validator("mode", mode="before")
     @classmethod
     def normalize_mode(cls, value: str | None) -> str | None:
         if value is None:

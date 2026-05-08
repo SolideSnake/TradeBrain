@@ -9,10 +9,12 @@ from app.application.event_service import EventService
 from app.application.ibkr_settings_service import IBKRSettingsService
 from app.application.notification_settings_service import NotificationSettingsService
 from app.application.notifications import NotificationService
+from app.application.portfolio_history_service import PortfolioHistoryService
 from app.application.scanner_service import ScannerApplicationService
 from app.application.snapshot_cache_service import SnapshotCacheService
 from app.application.snapshot_pipeline_service import SnapshotPipelineService
 from app.application.snapshot_refresh_settings_service import SnapshotRefreshSettingsService
+from app.application.target_portfolio_service import TargetPortfolioService
 from app.application.state_engine import StateEngine
 from app.application.watchlist_service import WatchlistService
 from app.config.settings import get_settings
@@ -34,9 +36,19 @@ from app.domains.preferences.schemas import (
     SnapshotRefreshSettingsRead,
     SnapshotRefreshSettingsUpdate,
 )
+from app.domains.portfolio_history.schemas import (
+    PortfolioHistoryPointRead,
+    PortfolioHistoryRange,
+)
 from app.domains.scanner.schemas import ScannerResult
 from app.domains.snapshot.schemas import SnapshotResponse
 from app.domains.state.schemas import WatchlistStateSnapshot
+from app.domains.target_portfolio.errors import DuplicateTargetPositionSymbolError
+from app.domains.target_portfolio.schemas import (
+    TargetPositionCreate,
+    TargetPositionRead,
+    TargetPositionUpdate,
+)
 from app.domains.watchlist.errors import DuplicateWatchlistSymbolError
 from app.domains.watchlist.schemas import (
     WatchlistEntryCreate,
@@ -50,6 +62,7 @@ state_engine = StateEngine()
 alert_rule_service = AlertRuleService()
 notification_settings_service = NotificationSettingsService()
 event_service = EventService()
+portfolio_history_service = PortfolioHistoryService()
 notification_service = NotificationService(
     event_service=event_service,
     notification_settings_service=notification_settings_service
@@ -61,11 +74,13 @@ snapshot_pipeline_service = SnapshotPipelineService(
 snapshot_cache_service = SnapshotCacheService(
     snapshot_pipeline_service=snapshot_pipeline_service,
     event_service=event_service,
+    portfolio_history_service=portfolio_history_service,
 )
 scanner_service = ScannerApplicationService(
     snapshot_pipeline_service=snapshot_pipeline_service
 )
 snapshot_refresh_settings_service = SnapshotRefreshSettingsService()
+target_portfolio_service = TargetPortfolioService()
 
 
 @router.get("/api/health")
@@ -105,6 +120,63 @@ def list_events(
     db: Session = Depends(get_db),
 ) -> list[EventRecordRead]:
     return event_service.list_recent(db, limit)
+
+
+@router.get("/api/portfolio/history", response_model=list[PortfolioHistoryPointRead])
+def list_portfolio_history(
+    range: PortfolioHistoryRange = Query(default="1D"),
+    db: Session = Depends(get_db),
+) -> list[PortfolioHistoryPointRead]:
+    return portfolio_history_service.list_history(db, range_name=range)
+
+
+@router.get("/api/target-positions", response_model=list[TargetPositionRead])
+def list_target_positions(db: Session = Depends(get_db)) -> list[TargetPositionRead]:
+    return target_portfolio_service.list_positions(db)
+
+
+@router.post(
+    "/api/target-positions",
+    response_model=TargetPositionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_target_position(
+    payload: TargetPositionCreate,
+    db: Session = Depends(get_db),
+) -> TargetPositionRead:
+    try:
+        return target_portfolio_service.create_position(db, payload)
+    except DuplicateTargetPositionSymbolError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Target portfolio already contains symbol '{exc}'.",
+        ) from exc
+
+
+@router.patch("/api/target-positions/{position_id}", response_model=TargetPositionRead)
+def update_target_position(
+    position_id: int,
+    payload: TargetPositionUpdate,
+    db: Session = Depends(get_db),
+) -> TargetPositionRead:
+    try:
+        position = target_portfolio_service.update_position(db, position_id, payload)
+    except DuplicateTargetPositionSymbolError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Target portfolio already contains symbol '{exc}'.",
+        ) from exc
+    if position is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target position not found")
+    return position
+
+
+@router.delete("/api/target-positions/{position_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_target_position(position_id: int, db: Session = Depends(get_db)) -> Response:
+    deleted = target_portfolio_service.delete_position(db, position_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target position not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/api/alert-rules", response_model=list[AlertRuleRead])

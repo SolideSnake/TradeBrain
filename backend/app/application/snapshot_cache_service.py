@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from threading import Lock
 
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.adapters.persistence.sqlite.snapshot_repository import SnapshotRepository
 from app.application.event_service import EventService
+from app.application.portfolio_history_service import PortfolioHistoryService
 from app.application.snapshot_builder import SnapshotBuilder
 from app.application.snapshot_pipeline_service import SnapshotPipelineService
 from app.domains.snapshot.models import SnapshotCacheRecord
@@ -22,16 +25,20 @@ class SnapshotCacheService:
         snapshot_pipeline_service: SnapshotPipelineService | None = None,
         snapshot_builder: SnapshotBuilder | None = None,
         event_service: EventService | None = None,
+        portfolio_history_service: PortfolioHistoryService | None = None,
     ) -> None:
         self.repository = repository or SnapshotRepository()
         self.snapshot_pipeline_service = snapshot_pipeline_service
         self.snapshot_builder = snapshot_builder
         self.event_service = event_service or EventService()
+        self.portfolio_history_service = portfolio_history_service or PortfolioHistoryService()
 
     def get_latest(self, db: Session) -> SnapshotResponse:
         record = self.repository.get(db)
         if record and record.snapshot_json:
-            return self._build_response(record, from_cache=True)
+            response = self._build_response(record, from_cache=True)
+            if response.snapshot is not None:
+                return response
         return self.refresh(db, trigger="initial")
 
     def refresh(self, db: Session, trigger: str = "manual") -> SnapshotResponse:
@@ -59,6 +66,7 @@ class SnapshotCacheService:
                 return self._build_response(record, from_cache=bool(record.snapshot_json))
 
             record = self.repository.save_success(db, snapshot)
+            self.portfolio_history_service.record_snapshot(db, snapshot)
             self._record_refresh_event(
                 db,
                 trigger=trigger,
@@ -111,16 +119,26 @@ class SnapshotCacheService:
             snapshot=snapshot,
             cache_status=cache_status,
             from_cache=from_cache,
-            last_success_at=record.last_success_at,
-            refresh_started_at=record.refresh_started_at,
-            last_error_at=record.last_error_at,
+            last_success_at=self._as_utc_aware(record.last_success_at),
+            refresh_started_at=self._as_utc_aware(record.refresh_started_at),
+            last_error_at=self._as_utc_aware(record.last_error_at),
             last_error=record.last_error,
         )
+
+    def _as_utc_aware(self, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     def _parse_snapshot(self, snapshot_json: str) -> CanonicalSnapshot | None:
         if not snapshot_json:
             return None
-        return CanonicalSnapshot.model_validate_json(snapshot_json)
+        try:
+            return CanonicalSnapshot.model_validate_json(snapshot_json)
+        except ValidationError:
+            return None
 
     def _record_refresh_event(
         self,
