@@ -91,6 +91,12 @@ export interface QuoteSnapshot {
   bid: number | null;
   ask: number | null;
   currency: string;
+  base_currency: string;
+  fx_rate_to_base: number | null;
+  last_price_base: number | null;
+  previous_close_base: number | null;
+  bid_base: number | null;
+  ask_base: number | null;
   as_of: string | null;
   source: string;
 }
@@ -124,7 +130,9 @@ export interface PriceReferenceLevels {
 
 export interface IndicatorSnapshot {
   current_price: number | null;
+  current_price_base: number | null;
   previous_close: number | null;
+  previous_close_base: number | null;
   day_change_percent: number | null;
   average_cost: number | null;
   market_value: number | null;

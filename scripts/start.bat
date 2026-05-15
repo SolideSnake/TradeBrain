@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-powershell -ExecutionPolicy Bypass -File "%~dp0start.ps1" %*
+powershell -ExecutionPolicy Bypass -File "%~dp0powershell\start.ps1" %*
 set EXITCODE=%ERRORLEVEL%
 
 if not "%EXITCODE%"=="0" (

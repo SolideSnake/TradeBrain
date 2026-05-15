@@ -63,6 +63,23 @@ def test_snapshot_endpoint_returns_test_tws_snapshot(client):
     assert snapshot["account"]["account_id"] == "TEST-ACCOUNT"
 
 
+def test_snapshot_converts_non_usd_watchlist_quote_to_account_currency(client):
+    client.post("/api/watchlist", json={"symbol": "000660"})
+
+    response = client.get("/api/snapshot")
+
+    assert response.status_code == 200
+    entry = response.json()["snapshot"]["watchlist"][0]
+    assert entry["quote"]["currency"] == "KRW"
+    assert entry["quote"]["base_currency"] == "USD"
+    assert entry["quote"]["fx_rate_to_base"] == 0.00072
+    assert entry["quote"]["last_price"] == 1_976_000
+    assert entry["quote"]["last_price_base"] == 1422.72
+    assert entry["indicators"]["current_price"] == 1_976_000
+    assert entry["indicators"]["current_price_base"] == 1422.72
+    assert entry["indicators"]["high_52w"] == 2_331_680
+
+
 def test_snapshot_endpoint_returns_cached_snapshot_until_refresh(client):
     client.post(
         "/api/watchlist",

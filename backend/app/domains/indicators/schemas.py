@@ -18,7 +18,9 @@ class PriceReferenceLevels(BaseModel):
 
 class IndicatorSnapshot(BaseModel):
     current_price: float | None = None
+    current_price_base: float | None = None
     previous_close: float | None = None
+    previous_close_base: float | None = None
     day_change_percent: float | None = None
     average_cost: float | None = None
     market_value: float | None = None

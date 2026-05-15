@@ -13,6 +13,12 @@ class QuoteSnapshot(BaseModel):
     bid: float | None = None
     ask: float | None = None
     currency: str = "USD"
+    base_currency: str = "USD"
+    fx_rate_to_base: float | None = None
+    last_price_base: float | None = None
+    previous_close_base: float | None = None
+    bid_base: float | None = None
+    ask_base: float | None = None
     as_of: datetime | None = None
     source: str = "unknown"
 

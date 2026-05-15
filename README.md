@@ -34,8 +34,8 @@ TradeBrain/
   backend/        FastAPI 后端与 SQLite 模型
   web/            React + Vite 看板前端
   docs/           需求、MVP、技术方案、交接文档
-  install.ps1     Windows 一键安装 / 检测脚本
-  install.cmd     给双击或 cmd 用的包装脚本
+  scripts/        Windows 一键安装 / 启动脚本
+    powershell/   PowerShell 脚本实现
   .env.example    本地环境变量模板
 ```
 
@@ -63,14 +63,14 @@ TradeBrain/
 
 ```powershell
 cd D:\code\TradeBrain
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\powershell\install.ps1
 ```
 
 或者直接运行：
 
 ```powershell
 cd D:\code\TradeBrain
-.\install.cmd
+.\scripts\install.bat
 ```
 
 脚本会自动完成：
@@ -88,10 +88,10 @@ cd D:\code\TradeBrain
 
 ```powershell
 # 只检查环境，不安装
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -CheckOnly
+powershell -ExecutionPolicy Bypass -File .\scripts\powershell\install.ps1 -CheckOnly
 
 # 安装依赖，但跳过测试和构建
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipValidation
+powershell -ExecutionPolicy Bypass -File .\scripts\powershell\install.ps1 -SkipValidation
 ```
 
 ## 一键启动
@@ -100,14 +100,14 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipValidation
 
 ```powershell
 cd D:\code\TradeBrain
-powershell -ExecutionPolicy Bypass -File .\start.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\powershell\start.ps1
 ```
 
 或者直接运行：
 
 ```powershell
 cd D:\code\TradeBrain
-.\start.cmd
+.\scripts\start.bat
 ```
 
 启动脚本会：
@@ -124,10 +124,10 @@ cd D:\code\TradeBrain
 
 ```powershell
 # 启动但不自动打开浏览器
-powershell -ExecutionPolicy Bypass -File .\start.ps1 -NoBrowser
+powershell -ExecutionPolicy Bypass -File .\scripts\powershell\start.ps1 -NoBrowser
 
 # 只演练启动流程，不真正启动服务
-powershell -ExecutionPolicy Bypass -File .\start.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File .\scripts\powershell\start.ps1 -DryRun
 ```
 
 说明：

@@ -41,7 +41,9 @@ class IndicatorService:
 
         return IndicatorSnapshot(
             current_price=current_price,
+            current_price_base=quote.last_price_base if quote else None,
             previous_close=quote.previous_close if quote else None,
+            previous_close_base=quote.previous_close_base if quote else None,
             day_change_percent=quote.change_percent if quote else None,
             average_cost=average_cost,
             market_value=market_value,

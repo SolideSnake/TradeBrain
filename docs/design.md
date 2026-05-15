@@ -132,8 +132,12 @@ CanonicalSnapshot
 TradeBrain/
   README.md
   .gitignore
-  install.ps1
-  start.ps1
+  scripts/
+    install.bat
+    start.bat
+    powershell/
+      install.ps1
+      start.ps1
   backend/
     pyproject.toml
     app/

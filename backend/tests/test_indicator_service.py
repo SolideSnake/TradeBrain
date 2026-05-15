@@ -11,7 +11,9 @@ def test_indicator_service_builds_watchlist_metrics():
     quote = QuoteSnapshot(
         symbol="AAPL",
         last_price=180.0,
+        last_price_base=180.0,
         previous_close=175.0,
+        previous_close_base=175.0,
         change_percent=2.86,
         source="test",
     )
@@ -38,6 +40,8 @@ def test_indicator_service_builds_watchlist_metrics():
     indicators = service.build(quote, position, reference_levels, fundamentals)
 
     assert indicators.current_price == 180.0
+    assert indicators.current_price_base == 180.0
+    assert indicators.previous_close_base == 175.0
     assert indicators.market_value == 1800.0
     assert indicators.unrealized_pnl == 300.0
     assert indicators.unrealized_pnl_percent == 20.0

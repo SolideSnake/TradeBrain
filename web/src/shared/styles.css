@@ -2182,6 +2182,10 @@ a {
   font-weight: 700;
 }
 
+.market-native-price {
+  font-size: 12px;
+}
+
 .value-warning {
   color: var(--warn);
   font-weight: 700;

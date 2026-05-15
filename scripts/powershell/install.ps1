@@ -6,7 +6,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 $BackendDir = Join-Path $ProjectRoot "backend"
 $WebDir = Join-Path $ProjectRoot "web"
 $VenvDir = Join-Path $ProjectRoot ".venv"

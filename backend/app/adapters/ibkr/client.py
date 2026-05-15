@@ -160,6 +160,21 @@ class LiveIBKRClient(IBKRClient):
                 contracts_by_symbol,
                 now,
             )
+            quote_currencies = {
+                quote.currency.strip().upper()
+                for quote in quotes.values()
+                if quote.currency.strip().upper() not in fx_rates
+            }
+            fx_rates.update(
+                self._build_fx_rates(
+                    ib,
+                    Forex,
+                    quote_currencies,
+                    account.currency,
+                    now,
+                    warnings,
+                )
+            )
             reference_levels = self._build_reference_levels(
                 ib,
                 contracts_by_symbol,

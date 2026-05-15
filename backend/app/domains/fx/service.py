@@ -1,10 +1,46 @@
 from __future__ import annotations
 
 from app.domains.fx.schemas import FxRateSnapshot
+from app.domains.market.schemas import QuoteSnapshot
 from app.domains.portfolio.schemas import PositionSnapshot
 
 
 class FxConversionService:
+    def convert_quote(
+        self,
+        quote: QuoteSnapshot,
+        base_currency: str,
+        rates: dict[str, FxRateSnapshot],
+    ) -> QuoteSnapshot:
+        source_currency = quote.currency.strip().upper() or base_currency
+        normalized_base = base_currency.strip().upper() or source_currency
+        rate = self._resolve_rate(source_currency, normalized_base, rates)
+
+        if rate is None:
+            return quote.model_copy(
+                update={
+                    "currency": source_currency,
+                    "base_currency": normalized_base,
+                    "fx_rate_to_base": None,
+                    "last_price_base": None,
+                    "previous_close_base": None,
+                    "bid_base": None,
+                    "ask_base": None,
+                }
+            )
+
+        return quote.model_copy(
+            update={
+                "currency": source_currency,
+                "base_currency": normalized_base,
+                "fx_rate_to_base": rate,
+                "last_price_base": self._convert(quote.last_price, rate),
+                "previous_close_base": self._convert(quote.previous_close, rate),
+                "bid_base": self._convert(quote.bid, rate),
+                "ask_base": self._convert(quote.ask, rate),
+            }
+        )
+
     def convert_position(
         self,
         position: PositionSnapshot,

@@ -13,6 +13,7 @@ from app.adapters.persistence.sqlite.db import get_engine, get_session_factory
 from app.application.snapshot_builder import SnapshotBuilder
 from app.config.settings import get_settings
 from app.domains.fundamentals.schemas import FundamentalSnapshot
+from app.domains.fx.schemas import FxRateSnapshot
 from app.domains.indicators.schemas import PriceReferenceLevels
 from app.domains.market.schemas import QuoteSnapshot
 from app.domains.portfolio.schemas import AccountSnapshot
@@ -52,9 +53,25 @@ class TestIBKRClient(IBKRClient):
             quotes=quotes,
             reference_levels=reference_levels,
             fundamentals=fundamentals,
+            fx_rates=self._build_fx_rates(quotes, now),
         )
 
     def _build_quote(self, symbol: str, now: datetime) -> QuoteSnapshot:
+        if symbol.isdigit() and len(symbol) == 6:
+            last_price = 1_976_000.0
+            previous_close = 1_835_000.0
+            return QuoteSnapshot(
+                symbol=symbol,
+                last_price=last_price,
+                previous_close=previous_close,
+                change_percent=round(((last_price - previous_close) / previous_close) * 100, 2),
+                bid=last_price - 1_000,
+                ask=last_price + 1_000,
+                currency="KRW",
+                as_of=now,
+                source="test",
+            )
+
         seed = sum(ord(character) for character in symbol)
         previous_close = round(20 + (seed % 240) + ((seed % 17) / 10), 2)
         drift = ((seed % 9) - 4) / 100
@@ -71,6 +88,23 @@ class TestIBKRClient(IBKRClient):
             as_of=now,
             source="test",
         )
+
+    def _build_fx_rates(
+        self,
+        quotes: dict[str, QuoteSnapshot],
+        now: datetime,
+    ) -> dict[str, FxRateSnapshot]:
+        if any(quote.currency == "KRW" for quote in quotes.values()):
+            return {
+                "KRW": FxRateSnapshot(
+                    from_currency="KRW",
+                    to_currency="USD",
+                    rate=0.00072,
+                    source="test",
+                    as_of=now,
+                )
+            }
+        return {}
 
     def _build_reference_levels(self, symbol: str, now: datetime) -> PriceReferenceLevels:
         quote = self._build_quote(symbol, now)

@@ -1,6 +1,6 @@
 @echo off
 setlocal
-powershell -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
+powershell -ExecutionPolicy Bypass -File "%~dp0powershell\install.ps1" %*
 set EXITCODE=%ERRORLEVEL%
 
 echo.

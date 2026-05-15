@@ -309,11 +309,7 @@ export function MonitorPage() {
                 </div>
 
                 <div className="cell-stack">
-                  <span>
-                    {formatCurrency(entry.indicators?.current_price ?? null, entryCurrency(entry), {
-                      digits: 2,
-                    })}
-                  </span>
+                  <WatchlistPriceCell entry={entry} />
                   <span className={marketToneClass(entry.indicators?.day_change_percent ?? null)}>
                     日内 {formatPercent(entry.indicators?.day_change_percent ?? null)}
                   </span>
@@ -358,6 +354,27 @@ export function MonitorPage() {
         </article>
       </section>
     </section>
+  );
+}
+
+function WatchlistPriceCell({ entry }: { entry: SnapshotWatchlistItem }) {
+  const nativeCurrency = entryCurrency(entry);
+  const baseCurrency = entry.quote?.base_currency ?? entry.position?.base_currency ?? "USD";
+  const basePrice = entry.indicators?.current_price_base ?? entry.quote?.last_price_base ?? null;
+  const nativePrice = entry.indicators?.current_price ?? entry.quote?.last_price ?? null;
+  const isForeignCurrency = nativeCurrency !== baseCurrency;
+  const mainPrice = isForeignCurrency ? basePrice : nativePrice;
+  const mainCurrency = isForeignCurrency ? baseCurrency : nativeCurrency;
+
+  return (
+    <>
+      <span>{formatCurrency(mainPrice, mainCurrency, { digits: 2 })}</span>
+      {isForeignCurrency ? (
+        <span className="muted market-native-price">
+          {formatCurrency(nativePrice, nativeCurrency, { digits: 2 })}
+        </span>
+      ) : null}
+    </>
   );
 }
 

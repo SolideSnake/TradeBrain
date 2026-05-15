@@ -48,15 +48,26 @@ class SnapshotBuilder:
         fx_rates = self._resolve_fx_rates(
             db,
             broker_snapshot.fx_rates,
-            {position.currency for position in broker_snapshot.positions},
+            {
+                *{position.currency for position in broker_snapshot.positions},
+                *{quote.currency for quote in broker_snapshot.quotes.values()},
+            },
             broker_snapshot.account.currency,
             broker_snapshot.warnings,
         )
+        quotes_by_symbol = {
+            symbol: self.fx_conversion_service.convert_quote(
+                quote,
+                broker_snapshot.account.currency,
+                fx_rates,
+            )
+            for symbol, quote in broker_snapshot.quotes.items()
+        }
         positions_by_symbol = {
             position.symbol: self.fx_conversion_service.convert_position(
                 self.indicator_service.enrich_position(
                     position,
-                    broker_snapshot.quotes.get(position.symbol),
+                    quotes_by_symbol.get(position.symbol),
                 ),
                 broker_snapshot.account.currency,
                 fx_rates,
@@ -67,7 +78,7 @@ class SnapshotBuilder:
         indicators_by_symbol = {}
         for entry in watchlist_entries:
             indicators_by_symbol[entry.symbol] = self.indicator_service.build(
-                broker_snapshot.quotes.get(entry.symbol),
+                quotes_by_symbol.get(entry.symbol),
                 positions_by_symbol.get(entry.symbol),
                 broker_snapshot.reference_levels.get(entry.symbol),
                 broker_snapshot.fundamentals.get(entry.symbol),
@@ -75,7 +86,7 @@ class SnapshotBuilder:
 
         watchlist: list[CanonicalWatchlistItem] = []
         for entry in watchlist_entries:
-            quote = broker_snapshot.quotes.get(entry.symbol)
+            quote = quotes_by_symbol.get(entry.symbol)
             position = positions_by_symbol.get(entry.symbol)
             reference_levels = broker_snapshot.reference_levels.get(entry.symbol)
             fundamentals = broker_snapshot.fundamentals.get(entry.symbol)

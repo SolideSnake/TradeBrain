@@ -7,11 +7,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 $BackendDir = Join-Path $ProjectRoot "backend"
 $WebDir = Join-Path $ProjectRoot "web"
 $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-$InstallScript = Join-Path $ProjectRoot "install.ps1"
+$InstallScript = Join-Path $ScriptDir "install.ps1"
 $BackendHealthUrl = "http://127.0.0.1:8000/api/health"
 $FrontendUrl = "http://127.0.0.1:5173"
 $BackendPort = 8000
@@ -274,7 +275,7 @@ if ($backendAlreadyRunning) {
     Write-Ok "Backend already running"
 } else {
     if (-not (Test-Path $VenvPython)) {
-        throw "Python runtime not found at .venv. Run install.ps1 first."
+        throw "Python runtime not found at .venv. Run scripts\install.bat or scripts\powershell\install.ps1 first."
     }
 
     $backendCommand = "& {0} -m uvicorn app.main:app --reload" -f (Quote-Single $VenvPython)
